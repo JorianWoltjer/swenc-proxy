@@ -1,0 +1,16 @@
+[package]
+name = "backend"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+aes-gcm = "0.10.3"
+argon2 = "0.5.3"
+axum = { version = "0.7.9", features = ["tokio"] }
+futures-util = "0.3.31"
+reqwest = { version = "0.12.9", features = ["stream"] }
+serde = { version = "1.0.215", features = ["derive"] }
+tokio = { version = "1.41.1", features = ["rt-multi-thread"] }
+tokio-stream = "0.1.16"
+tokio-util = "0.7.12"
+tower-http = { version = "0.6.2", features = ["fs"] }

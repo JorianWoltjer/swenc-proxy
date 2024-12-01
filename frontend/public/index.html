@@ -1,0 +1,46 @@
+<html>
+  <head>
+    <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
+  </head>
+  <body>
+    <script type="module">
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("/worker.js", { type: "module" });
+      }
+
+      navigator.serviceWorker.ready.then((registration) => {
+        if (localStorage.getItem("key") === null) {
+          localStorage.setItem("key", prompt("Enter the encryption key:"));
+        }
+        registration.active.postMessage({
+          type: "setKey",
+          key: localStorage.getItem("key"),
+        });
+      });
+
+      async function download(url) {
+        // Fetch the decrypted file via the Service Worker
+        const response = await fetch("/proxy?" + new URLSearchParams({ url }));
+        const blob = await response.blob();
+
+        // Create a Blob URL and trigger the download
+        const blobUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = blobUrl;
+        anchor.download = new URL(url).pathname.split("/").pop();
+        document.body.appendChild(anchor);
+        anchor.click();
+
+        // Clean up
+        document.body.removeChild(anchor);
+        URL.revokeObjectURL(blobUrl);
+      }
+
+      // TODO: paste url or from hash
+      document.getElementById("download").addEventListener("click", async () => {
+        await download("https://example.com/secret.txt");
+      });
+    </script>
+    <button id="download">Download</button>
+  </body>
+</html>
