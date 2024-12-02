@@ -8,10 +8,12 @@ use argon2::Argon2;
 use axum::{
     Router,
     body::Body,
-    extract::{Query, State},
+    extract::{Json, State},
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
 };
+use base64::{Engine, prelude::BASE64_STANDARD};
+use http::{HeaderMap, HeaderName};
 use reqwest::Client;
 use serde::Deserialize;
 use tokio::{net::TcpListener, sync::mpsc};
@@ -27,9 +29,13 @@ struct AppState {
     cipher: Aes256Gcm,
 }
 
+// TODO: encrypt this too with same key
 #[derive(Deserialize)]
-struct ProxyQuery {
+struct ProxyRequest {
     url: String,
+    method: String,
+    headers: Vec<(String, String)>,
+    body: Option<String>,
 }
 
 struct EncryptedChunk {
@@ -47,14 +53,36 @@ impl EncryptedChunk {
 }
 
 async fn proxy(
-    Query(query): Query<ProxyQuery>,
     State(state): State<AppState>,
+    Json(request): Json<ProxyRequest>,
 ) -> impl IntoResponse {
-    let url = query.url;
-    let client = state.client.clone();
+    let url = request.url;
+    let mut headers = HeaderMap::new();
+    for (key, value) in request.headers {
+        headers.insert(
+            HeaderName::try_from(key.as_str()).unwrap(),
+            value.parse().unwrap(),
+        );
+    }
+    let method = reqwest::Method::from_bytes(request.method.as_bytes()).unwrap();
+    let body = request
+        .body
+        .map(|body| BASE64_STANDARD.decode(body).unwrap());
 
-    let mut response = client.get(&url).send().await.unwrap();
+    // TODO: capture cookies?
+    println!("Proxying: {}", url);
+    let mut response = state
+        .client
+        .request(method, &url)
+        .headers(headers)
+        .body(body.unwrap_or_default())
+        .send()
+        .await
+        .unwrap();
     let (tx, rx) = mpsc::unbounded_channel::<Result<Vec<u8>, std::io::Error>>();
+
+    let response_headers = response.headers().clone();
+    let status_code = response.status();
 
     tokio::spawn(async move {
         while let Some(chunk) = response.chunk().await.unwrap() {
@@ -65,12 +93,42 @@ async fn proxy(
         }
     });
 
-    Body::from_stream(UnboundedReceiverStream::new(rx))
+    let mut headers = HeaderMap::new();
+    let mut last_key = None;
+    for (key, value) in response_headers {
+        if let Some(mut key) = key {
+            last_key = Some(key.clone());
+            if key == "transfer-encoding"
+                || key == "content-length"
+                || key == "content-security-policy"
+                || key == "content-security-policy-report-only"
+                || key == "x-frame-options"
+            {
+                continue;
+            }
+            if key == "location" {
+                key = "x-location".parse().unwrap();
+            }
+
+            headers.insert(key, value.clone());
+        } else {
+            headers.append(last_key.clone().unwrap(), value.clone());
+        }
+    }
+
+    (
+        status_code,
+        headers,
+        Body::from_stream(UnboundedReceiverStream::new(rx)),
+    )
 }
 
 #[tokio::main]
 async fn main() {
-    let client = Client::new();
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
     let mut key = [0; 32];
     Argon2::default()
         .hash_password_into(KEY, SALT, &mut key)
@@ -86,12 +144,18 @@ async fn main() {
     println!("Listening on http://{listen_address}");
 
     let router = Router::new()
-        .route("/proxy", get(proxy))
+        .route("/proxy/", post(proxy))
+        .route("/proxy/:filename", post(proxy))
+        .route(
+            "/dummy",
+            get(|| async { "You shouldn't have gotten here..." }),
+        )
         .nest_service("/pkg", ServeDir::new("../frontend/pkg"))
         .fallback_service(
             ServeDir::new("../frontend/public").append_index_html_on_directories(true),
         )
         .with_state(state);
 
+    // TODO: check multithreading
     axum::serve(listener, router).await.unwrap();
 }

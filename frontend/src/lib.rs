@@ -74,6 +74,7 @@ pub async fn decrypt(
         let plaintext = cipher.decrypt(nonce, &*ciphertext).unwrap();
         // log(&format!("plaintext: {:?}", plaintext));
 
+        // TODO: check if writer already closed
         writer
             .enqueue_with_chunk(unsafe { &Uint8Array::new(&Uint8Array::view(&plaintext)) })
             .unwrap();

@@ -8,6 +8,7 @@
         navigator.serviceWorker.register("/worker.js", { type: "module" });
       }
 
+      // TODO: somehow this gets unregistered on github & netflix
       navigator.serviceWorker.ready.then((registration) => {
         if (localStorage.getItem("key") === null) {
           localStorage.setItem("key", prompt("Enter the encryption key:"));
@@ -18,29 +19,20 @@
         });
       });
 
-      async function download(url) {
-        // Fetch the decrypted file via the Service Worker
-        const response = await fetch("/proxy?" + new URLSearchParams({ url }));
-        const blob = await response.blob();
-
-        // Create a Blob URL and trigger the download
-        const blobUrl = URL.createObjectURL(blob);
-        const anchor = document.createElement("a");
-        anchor.href = blobUrl;
-        anchor.download = new URL(url).pathname.split("/").pop();
-        document.body.appendChild(anchor);
-        anchor.click();
-
-        // Clean up
-        document.body.removeChild(anchor);
-        URL.revokeObjectURL(blobUrl);
+      function toDummy(url) {
+        return "/dummy?" + new URLSearchParams({ url });
       }
 
-      // TODO: paste url or from hash
-      document.getElementById("download").addEventListener("click", async () => {
-        await download("https://example.com/secret.txt");
+      document.getElementById("form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        const url = event.target.url.value;
+        location.href = toDummy(url);
       });
     </script>
-    <button id="download">Download</button>
+    <form id="form">
+      <label for="url">URL:</label>
+      <input name="url" type="text" value="https://example.com" />
+      <button type="submit">Go!</button>
+    </form>
   </body>
 </html>

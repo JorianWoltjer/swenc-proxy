@@ -7,14 +7,19 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener('fetch', event => {
-  const pathToIntercept = '/proxy';
-
+  console.log(event);
   const url = new URL(event.request.url);
 
-  // Intercept only the desired URL
-  if (url.pathname === pathToIntercept) {
-    event.respondWith(globalThis.fetchAndDecrypt(event.request));
+  // Don't intercept own requests or non-HTTP requests
+  if ((url.origin === location.origin && !isDummyRequest(event.request.url)) ||
+    (url.protocol !== 'http:' && url.protocol !== 'https:')) {
+
+    event.respondWith(fetch(event.request));
+    return;
   }
+
+  console.log("Intercepting", event.request.url);
+  event.respondWith(globalThis.fetchAndDecrypt(event.request));
 });
 
 self.addEventListener('message', async (event) => {
@@ -26,31 +31,84 @@ self.addEventListener('message', async (event) => {
   }
 });
 
-(async () => {
-  async function fetchAndDecrypt(request) {
-    if (!globalThis.key) {
-      throw new Error('Key not set');
-    }
+function isDummyRequest(url) {
+  url = new URL(url);
+  return url.origin === location.origin && url.pathname === '/dummy';
+}
+function toDummy(url) {
+  return new URL("/dummy?" + new URLSearchParams({ url }), location.origin).href;
+}
 
-    const response = await fetch(request);
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    // Create a stream for decrypted content
-    // TODO: if this is impossible, maybe external progress bar
-    const decryptedStream = new ReadableStream({
-      async start(controller) {
-        await decrypt(response.body, controller, globalThis.key)
-      },
-    });
-
-    // Return a new Response with the decrypted stream
-    return new Response(decryptedStream, {
-      headers: { 'Content-Type': 'application/octet-stream' },
-    });
+async function fetchThroughProxy(request) {
+  const data = {
+    url: request.url,
+    method: request.method,
+    headers: Array.from(request.headers.entries()),
+    // body: btoa(String.fromCharCode(...new Uint8Array(await request.arrayBuffer())))
+  }
+  if (request.body) {
+    data.body = btoa(String.fromCharCode(...new Uint8Array(await request.arrayBuffer())));
   }
 
-  globalThis.fetchAndDecrypt = fetchAndDecrypt;
-})();
+  if (isDummyRequest(data.url)) {
+    // Get real URL from query string
+    const url = new URLSearchParams(new URL(data.url).search).get("url");
+    if (!url) {
+      throw new Error('No ?url= query parameter in /dummy request');
+    }
+    data.url = url;
+  }
+
+  const filename = new URL(data.url).pathname.split('/').at(-1);
+  console.log('Proxying', data);
+  return {
+    response: await fetch(`/proxy/${filename}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    }),
+    newOrigin: new URL(data.url).origin,
+  };
+}
+
+async function fetchAndDecrypt(request) {
+  if (!globalThis.key) {
+    throw new Error('Key not set');
+  }
+
+  const { response, newOrigin } = await fetchThroughProxy(request);
+
+  // Create a stream for decrypted content
+  const decryptedStream = new ReadableStream({
+    async start(controller) {
+      if (request.mode == "navigate") {
+        controller.enqueue(new TextEncoder().encode(`
+<!DOCTYPE html>
+<script src="/prison.js"></script>
+<base href="${newOrigin.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}">
+`));
+      }
+
+      await decrypt(response.body, controller, globalThis.key)
+    },
+  });
+
+  let headers = response.headers;
+  if (headers.has('X-Location')) {
+    headers = new Headers({
+      ...headers,
+      'Location': toDummy(headers.get('X-Location')),
+    })
+  }
+  // Return a new Response with the decrypted stream
+  const stream = [101, 204, 205, 304].includes(response.status) ? null : decryptedStream;
+  return new Response(stream, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+globalThis.fetchAndDecrypt = fetchAndDecrypt;
