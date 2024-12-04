@@ -6,28 +6,31 @@
     <script type="module">
       if ("serviceWorker" in navigator) {
         // TODO: registrations = await navigator.serviceWorker.getRegistrations()
-        navigator.serviceWorker.register("/worker.js", { type: "module" });
+        navigator.serviceWorker
+          .register("/swenc-proxy-sw.js", { type: "module" })
+          .then((registration) => {
+            console.log("ServiceWorker registered", registration);
+          })
+          .catch((error) => {
+            console.error("ServiceWorker registration failed: ", error);
+            if (navigator.userAgent.toLowerCase().includes("firefox")) {
+              alert(`ERROR: ServiceWorker registration failed!
+Since you are on Firefox, this may be due to missing 'import' support in ServiceWorkers. Please try a Chromium-based browser instead.
+(https://caniuse.com/mdn-javascript_statements_import_service_worker_support)`);
+            }
+          });
       }
 
-      // TODO: somehow this gets unregistered on github & netflix
       navigator.serviceWorker.ready.then((registration) => {
-        if (localStorage.getItem("key") === null) {
-          localStorage.setItem("key", prompt("Enter the encryption key:"));
-        }
-        registration.active.postMessage({
-          type: "setKey",
-          key: localStorage.getItem("key"),
-        });
+        const script = document.createElement("script");
+        script.src = "/swenc-proxy/prison.js";
+        document.head.appendChild(script);
       });
-
-      function toDummy(url) {
-        return "/dummy?" + new URLSearchParams({ url });
-      }
 
       document.getElementById("form").addEventListener("submit", (event) => {
         event.preventDefault();
         const url = event.target.url.value;
-        location.href = toDummy(url);
+        location.href = url;
       });
     </script>
     <form id="form">

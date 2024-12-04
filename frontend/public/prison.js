@@ -1,51 +1,30 @@
 console.log("Prison");
 
-// location.origin is Proxy's origin, document.baseURI is target's origin
-function isDummy(url) {
-  const parsed = new URL(url, document.baseURI);
-  return parsed.origin === location.origin && parsed.pathname === "/dummy";
+// Set variables in the worker
+// TODO: think about sites stealing this
+if (localStorage.getItem("swenc-proxy-key") === null) {
+  localStorage.setItem("swenc-proxy-key", prompt("Enter the encryption key:"));
 }
-function toDummy(url) {
-  if (isDummy(url)) {
-    return url;
-  }
+navigator.serviceWorker.controller.postMessage({
+  type: "setKey",
+  key: localStorage.getItem("swenc-proxy-key")
+});
+const targetOrigin = new URL(document.baseURI).origin;
+navigator.serviceWorker.controller.postMessage({
+  type: "setTargetOrigin",
+  origin: targetOrigin
+});
 
-  url = new URL(url, document.baseURI);
-  const hash = url.hash;
-  url.hash = "";
-  newUrl = "/dummy?" + new URLSearchParams({ url });
-  if (hash) {
-    newUrl += hash;
-  }
-  return new URL(newUrl, location.origin).href;
+// Keep targetOrigin in history state
+console.log("State", history.state);
+if (history.state?.targetOrigin && history.state.targetOrigin !== targetOrigin) {
+  navigator.serviceWorker.controller.postMessage({
+    type: "setTargetOrigin",
+    origin: history.state.targetOrigin
+  });
+  location.reload();
 }
-
-function interceptMutation(mutations) {
-  console.log(mutations);
-
-  for (const mutation of mutations) {
-    for (const node of mutation.addedNodes) {
-      if (node.tagName === "A") {
-        console.log("Intercepting <a>", node);
-        node.href = toDummy(node.href);
-      } else if (node.tagName === "IFRAME") {
-        console.log("Intercepting <iframe>", node);
-        node.src = toDummy(node.src);
-      }
-      if (typeof node.querySelectorAll !== "function") {
-        continue;  // text nodes, etc.
-      }
-      node.querySelectorAll("a").forEach((node) => {
-        console.log("Intercepting <a>", node);
-        node.href = toDummy(node.href);
-      });
-      node.querySelectorAll("iframe").forEach((node) => {
-        console.log("Intercepting <iframe>", node);
-        node.src = toDummy(node.src);
-      });
-    }
-  }
-}
+history.replaceState({ targetOrigin }, "");
 
 // Prevent proxied site from accessing my service worker (GitHub and Netflix would unregister it)
 const thisWorker = new URL("/worker.js", location.origin).href;
@@ -69,6 +48,45 @@ navigator.serviceWorker.getRegistration = new Proxy(navigator.serviceWorker.getR
   },
 });
 
+function toFakeUrl(url) {
+  url = new URL(url, targetOrigin);
+  if (url.origin === location.origin || url.origin === targetOrigin) {
+    // Make it same-origin (<base> tag will remember the real origin)
+    return new URL(url.pathname + url.search + url.hash, location.origin).href;
+  } else {
+    // Otherwise rewrite so we can intercept it
+    return new URL("/swenc-proxy/url?" + new URLSearchParams({ url }), location.origin).href;
+  }
+}
+
+function interceptMutation(mutations) {
+  console.log(mutations);
+
+  for (const mutation of mutations) {
+    for (const node of mutation.addedNodes) {
+      // Change direct nodes
+      if (node.tagName === "A") {
+        console.log("Intercepting <a>", node);
+        node.href = toFakeUrl(node.href);
+      } else if (node.tagName === "IFRAME") {
+        console.log("Intercepting <iframe>", node);
+        node.src = toFakeUrl(node.src);
+      } else if (typeof node.querySelectorAll !== "function") {
+        continue;  // Skip text nodes
+      }
+      // Change child nodes
+      node.querySelectorAll("a").forEach((node) => {
+        console.log("Intercepting <a>", node);
+        node.href = toFakeUrl(node.href);
+      });
+      node.querySelectorAll("iframe").forEach((node) => {
+        console.log("Intercepting <iframe>", node);
+        node.src = toFakeUrl(node.src);
+      });
+    }
+  }
+}
+
 // Overwrite all navigations because 'fetch' event won't trigger for cross-origin requests
 const observer = new MutationObserver(interceptMutation);
 observer.observe(document.documentElement, {
@@ -78,30 +96,26 @@ observer.observe(document.documentElement, {
 window.open = new Proxy(window.open, {
   apply(target, thisArg, args) {
     console.log("Intercepting window.open", args[0]);
-    args[0] = toDummy(args[0]);
+    args[0] = toFakeUrl(args[0]);
     return target.apply(thisArg, args);
   },
 });
 
-// Intercept all kinds of navigations (Chrome only)
+// Intercept all kinds of navigations (Chrome only, https://caniuse.com/mdn-api_navigation_navigate_event)
 navigation.addEventListener("navigate", (event) => {
   console.log("Intercepting navigate", event.destination);
-  if (!isDummy(event.destination.url)) {
+  // Need to block cross-origin navigations
+  if (new URL(event.destination.url).origin !== location.origin) {
     event.preventDefault();
-    location.href = toDummy(event.destination.url);
+    location.href = toFakeUrl(event.destination.url);
   }
 });
 
-// Intercept history changes, because cross-origin won't work
+// Intercept history changes, because won't work cross-origin
 const pushReplaceState = {
   apply(target, thisArg, args) {
     console.log("Intercepting pushReplaceState", args[2]);
-    // These URLs may be relative with /dummy, so need to convert to absolute
-    if (isDummy(new URL(args[2], location.origin).href)) {
-      args[2] = new URL(args[2], location.origin).href;
-    } else {
-      args[2] = toDummy(args[2]);
-    }
+    args[2] = toFakeUrl(args[2]);
     return target.apply(thisArg, args);
   },
 };

@@ -9,9 +9,10 @@ use axum::{
     Router,
     body::Body,
     extract::{Json, State},
-    response::IntoResponse,
+    response::{Html, IntoResponse, Redirect},
     routing::{get, post},
 };
+use axum_extra::response::JavaScript;
 use base64::{Engine, prelude::BASE64_STANDARD};
 use http::{HeaderMap, HeaderName};
 use regex::Regex;
@@ -163,17 +164,25 @@ async fn main() {
     let listener = TcpListener::bind(listen_address).await.unwrap();
     println!("Listening on http://{listen_address}");
 
+    // TODO: also make CSRF proof with fetch-mode
     let router = Router::new()
-        .route("/proxy/", post(proxy))
-        .route("/proxy/:filename", post(proxy))
+        .nest(
+            "/swenc-proxy",
+            Router::new()
+                .route("/proxy/", post(proxy))
+                .route("/proxy/:filename", post(proxy))
+                .nest_service("/pkg", ServeDir::new("../frontend/pkg"))
+                .fallback_service(ServeDir::new("../frontend/public")),
+        )
         .route(
-            "/dummy",
-            get(|| async { "You shouldn't have gotten here..." }),
+            "/swenc-proxy/", // To handle no path
+            get(|| async { Html(include_str!("../../frontend/public/index.html")) }),
         )
-        .nest_service("/pkg", ServeDir::new("../frontend/pkg"))
-        .fallback_service(
-            ServeDir::new("../frontend/public").append_index_html_on_directories(true),
+        .route(
+            "/swenc-proxy-sw.js", // Needs to be in the root directory
+            get(|| async { JavaScript(include_str!("../../frontend/public/worker.js")) }),
         )
+        .route("/", get(|| async { Redirect::temporary("/swenc-proxy/") }))
         .with_state(state);
 
     // TODO: check multithreading
