@@ -14,6 +14,7 @@ use axum::{
 };
 use base64::{Engine, prelude::BASE64_STANDARD};
 use http::{HeaderMap, HeaderName};
+use regex::Regex;
 use reqwest::Client;
 use serde::Deserialize;
 use tokio::{net::TcpListener, sync::mpsc};
@@ -22,6 +23,10 @@ use tower_http::services::ServeDir;
 
 const KEY: &[u8] = b"secret";
 const SALT: &[u8] = b"wasm-dl-salt";
+
+lazy_static::lazy_static! {
+    static ref COOKIE_DOMAIN_RE: Regex = Regex::new(r"(?i)(;\s*domain=)[a-z0-9.-]+").unwrap();
+}
 
 #[derive(Clone)]
 struct AppState {
@@ -53,6 +58,7 @@ impl EncryptedChunk {
 }
 
 async fn proxy(
+    axum_headers: HeaderMap,
     State(state): State<AppState>,
     Json(request): Json<ProxyRequest>,
 ) -> impl IntoResponse {
@@ -64,12 +70,22 @@ async fn proxy(
             value.parse().unwrap(),
         );
     }
+    if let Some(cookie) = axum_headers.get("cookie") {
+        headers.insert("cookie", cookie.clone());
+    }
+    let domain = axum_headers
+        .get("host")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .split(':')
+        .next()
+        .unwrap();
     let method = reqwest::Method::from_bytes(request.method.as_bytes()).unwrap();
     let body = request
         .body
         .map(|body| BASE64_STANDARD.decode(body).unwrap());
 
-    // TODO: capture cookies?
     println!("Proxying: {}", url);
     let mut response = state
         .client
@@ -95,19 +111,23 @@ async fn proxy(
 
     let mut headers = HeaderMap::new();
     let mut last_key = None;
-    for (key, value) in response_headers {
+    for (key, mut value) in response_headers {
         if let Some(mut key) = key {
             last_key = Some(key.clone());
-            if key == "transfer-encoding"
-                || key == "content-length"
-                || key == "content-security-policy"
-                || key == "content-security-policy-report-only"
-                || key == "x-frame-options"
-            {
-                continue;
-            }
-            if key == "location" {
-                key = "x-location".parse().unwrap();
+            match key.as_str() {
+                "transfer-encoding"
+                | "content-length"
+                | "content-security-policy"
+                | "content-security-policy-report-only"
+                | "x-frame-options" => continue,
+                "location" => key = "x-location".parse().unwrap(),
+                "set-cookie" => {
+                    value = COOKIE_DOMAIN_RE
+                        .replace_all(value.to_str().unwrap(), format!("${{1}}{}", domain))
+                        .parse()
+                        .unwrap();
+                }
+                _ => {}
             }
 
             headers.insert(key, value.clone());

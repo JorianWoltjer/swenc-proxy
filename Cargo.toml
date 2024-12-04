@@ -2,3 +2,4 @@
 [workspace]
 
 members = ["frontend", "backend"]
+# TODO: crypto crate

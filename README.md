@@ -1,4 +1,4 @@
-# wasm-dl
+# Service Worker Encrypted Proxy
 
 - paste URL, send it encrypted through wasm
 - stream download content and decrypt in wasm

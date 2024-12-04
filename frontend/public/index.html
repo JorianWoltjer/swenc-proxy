@@ -5,6 +5,7 @@
   <body>
     <script type="module">
       if ("serviceWorker" in navigator) {
+        // TODO: registrations = await navigator.serviceWorker.getRegistrations()
         navigator.serviceWorker.register("/worker.js", { type: "module" });
       }
 

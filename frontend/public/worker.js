@@ -40,16 +40,19 @@ function toDummy(url) {
 }
 
 async function fetchThroughProxy(request) {
+  console.log('Request', request);
   const data = {
     url: request.url,
     method: request.method,
     headers: Array.from(request.headers.entries()),
-    // body: btoa(String.fromCharCode(...new Uint8Array(await request.arrayBuffer())))
   }
+  console.log('Request Data', data);
   if (request.body) {
     data.body = btoa(String.fromCharCode(...new Uint8Array(await request.arrayBuffer())));
   }
 
+  // TODO: also make CSRF proof with fetch-mode
+  // TODO: make all routes start with /sw-proxy/ and change origin of all other URLs
   if (isDummyRequest(data.url)) {
     // Get real URL from query string
     const url = new URLSearchParams(new URL(data.url).search).get("url");
@@ -99,7 +102,7 @@ async function fetchAndDecrypt(request) {
   if (headers.has('X-Location')) {
     headers = new Headers({
       ...headers,
-      'Location': toDummy(headers.get('X-Location')),
+      'Location': toDummy(new URL(headers.get('X-Location'), newOrigin).href),
     })
   }
   // Return a new Response with the decrypted stream
