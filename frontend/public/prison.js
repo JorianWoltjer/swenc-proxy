@@ -1,14 +1,6 @@
 console.log("Prison");
 
 // Set variables in the worker
-// TODO: think about sites stealing this
-if (localStorage.getItem("swenc-proxy-key") === null) {
-  localStorage.setItem("swenc-proxy-key", prompt("Enter the encryption key:"));
-}
-navigator.serviceWorker.controller.postMessage({
-  type: "setKey",
-  key: localStorage.getItem("swenc-proxy-key")
-});
 const targetOrigin = new URL(document.baseURI).origin;
 navigator.serviceWorker.controller.postMessage({
   type: "setTargetOrigin",
@@ -24,7 +16,7 @@ if (history.state?.targetOrigin && history.state.targetOrigin !== targetOrigin) 
   });
   location.reload();
 }
-history.replaceState({ targetOrigin }, "");
+history.replaceState({ targetOrigin }, "", getVisualUrl(location.href));
 
 // Prevent proxied site from accessing my service worker (GitHub and Netflix would unregister it)
 const thisWorker = new URL("/worker.js", location.origin).href;
@@ -48,6 +40,16 @@ navigator.serviceWorker.getRegistration = new Proxy(navigator.serviceWorker.getR
   },
 });
 
+function getVisualUrl(url) {
+  url = new URL(url, location.origin);
+  if (url.origin === location.origin && url.pathname === '/swenc-proxy/url') {
+    // Has embedded URL
+    return getVisualUrl(new URLSearchParams(url.search).get('url'));
+  } else {
+    // Finally show relative URL
+    return new URL(url.pathname + url.search + url.hash, location.origin).href;
+  }
+}
 function toFakeUrl(url) {
   url = new URL(url, targetOrigin);
   if (url.origin === location.origin || url.origin === targetOrigin) {

@@ -13,7 +13,7 @@ function isMetaRequest(url) {
     url.pathname !== '/swenc-proxy/url';
 }
 
-self.addEventListener('fetch', event => {
+self.addEventListener('fetch', async (event) => {
   console.log(event);
   const url = new URL(event.request.url);
 
@@ -27,12 +27,14 @@ self.addEventListener('fetch', event => {
 
   // Start proxying
   console.log("Intercepting", event.request.url);
-  event.respondWith(globalThis.fetchAndDecrypt(event.request));
+  event.respondWith(fetchAndDecrypt(event.request));
 });
 
 self.addEventListener('message', async (event) => {
   // Always called at the start
   await init();
+
+  console.log('Message', event);
 
   const { type, key } = event.data;
   switch (type) {
@@ -104,8 +106,18 @@ function htmlEncode(str) {
 }
 
 async function fetchAndDecrypt(request) {
-  if (!globalThis.key) {
-    throw new Error('Key not set');
+  if (request.mode == "navigate") {
+    if ((await self.clients.matchAll()).length === 0) {
+      // All tabs are closed, reset the origin and back to main page
+      console.log("All tabs closed, resetting target origin");
+      globalThis.targetOrigin = null;
+      return new Response(null, {
+        status: 302,
+        headers: {
+          'Location': '/swenc-proxy/',
+        },
+      });
+    }
   }
 
   const { response, newOrigin } = await fetchThroughProxy(request);
@@ -143,5 +155,3 @@ async function fetchAndDecrypt(request) {
     headers,
   });
 }
-
-globalThis.fetchAndDecrypt = fetchAndDecrypt;

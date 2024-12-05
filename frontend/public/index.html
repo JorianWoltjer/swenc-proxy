@@ -5,20 +5,29 @@
   <body>
     <script type="module">
       if ("serviceWorker" in navigator) {
-        // TODO: registrations = await navigator.serviceWorker.getRegistrations()
-        navigator.serviceWorker
-          .register("/swenc-proxy-sw.js", { type: "module" })
-          .then((registration) => {
-            console.log("ServiceWorker registered", registration);
-          })
-          .catch((error) => {
-            console.error("ServiceWorker registration failed: ", error);
-            if (navigator.userAgent.toLowerCase().includes("firefox")) {
-              alert(`ERROR: ServiceWorker registration failed!
+        if (!navigator.serviceWorker.controller) {
+          navigator.serviceWorker
+            .register("/swenc-proxy-sw.js", { type: "module" })
+            .then((registration) => {
+              console.log("ServiceWorker registered", registration);
+            })
+            .catch((error) => {
+              console.error("ServiceWorker registration failed: ", error);
+              if (navigator.userAgent.toLowerCase().includes("firefox")) {
+                alert(`ERROR: ServiceWorker registration failed!
 Since you are on Firefox, this may be due to missing 'import' support in ServiceWorkers. Please try a Chromium-based browser instead.
 (https://caniuse.com/mdn-javascript_statements_import_service_worker_support)`);
-            }
+              }
+            });
+
+          // TODO: check key with API. maybe record fingerprint of key and store multiple
+          navigator.serviceWorker.ready.then((registration) => {
+            registration.active.postMessage({
+              type: "setKey",
+              key: prompt("Enter the encryption key:"),
+            });
           });
+        }
       }
 
       navigator.serviceWorker.ready.then((registration) => {

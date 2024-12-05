@@ -160,6 +160,7 @@ async fn main() {
         cipher: Aes256Gcm::new_from_slice(&key).unwrap(),
     };
 
+    // TODO: host on separate VPS due to SSRF concerns
     let listen_address = "0.0.0.0:8000";
     let listener = TcpListener::bind(listen_address).await.unwrap();
     println!("Listening on http://{listen_address}");
@@ -185,6 +186,5 @@ async fn main() {
         .route("/", get(|| async { Redirect::temporary("/swenc-proxy/") }))
         .with_state(state);
 
-    // TODO: check multithreading
     axum::serve(listener, router).await.unwrap();
 }
