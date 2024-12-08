@@ -2,19 +2,18 @@ use std::sync::Arc;
 
 use axum::{
     Router,
-    body::Body,
-    extract::{Json, State},
+    body::{Body, Bytes},
+    extract::State,
     response::{Html, IntoResponse, Redirect},
     routing::{get, post},
 };
 use axum_extra::response::JavaScript;
 use base64::{Engine, prelude::BASE64_STANDARD};
-use crypto::{EncryptionCodec, derive_key};
 use futures_util::SinkExt;
 use http::{HeaderMap, HeaderName};
 use regex::Regex;
 use reqwest::Client;
-use serde::Deserialize;
+use shared::{EncryptionCodec, ProxyRequest, derive_key};
 use tokio::net::TcpListener;
 use tokio_util::{codec::FramedWrite, io::ReaderStream};
 use tower_http::services::ServeDir;
@@ -31,20 +30,15 @@ struct AppState {
     key: [u8; 32],
 }
 
-// TODO: encrypt this too with same key
-#[derive(Deserialize)]
-struct ProxyRequest {
-    url: String,
-    method: String,
-    headers: Vec<(String, String)>,
-    body: Option<String>,
-}
-
 async fn proxy(
     axum_headers: HeaderMap,
     State(state): State<AppState>,
-    Json(request): Json<ProxyRequest>,
+    body: Bytes,
 ) -> impl IntoResponse {
+    let mut codec = EncryptionCodec::new(state.key);
+    let decrypted = codec.decode_once(&body);
+    let request: ProxyRequest = bincode::deserialize(&decrypted).unwrap();
+
     let url = request.url;
     let mut headers = HeaderMap::new();
     for (key, value) in request.headers {

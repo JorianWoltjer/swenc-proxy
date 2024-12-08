@@ -1,4 +1,4 @@
-import init, { decrypt, derive_key } from '/swenc-proxy/pkg/wasm_dl.js';
+import init, { decrypt_stream, derive_key, serialize_proxy_request } from '/swenc-proxy/pkg/frontend.js';
 
 console.log('Worker loaded');
 
@@ -92,10 +92,7 @@ async function fetchThroughProxy(request) {
   return {
     response: await fetch(`/swenc-proxy/proxy/${filename}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
+      body: serialize_proxy_request(data, globalThis.key),
     }),
     newOrigin,
   };
@@ -135,7 +132,7 @@ async function fetchAndDecrypt(request) {
 `));
       }
 
-      await decrypt(response.body, controller, globalThis.key)
+      await decrypt_stream(response.body, controller, globalThis.key)
     },
   });
 
