@@ -37,7 +37,7 @@ extern "C" {
 pub fn derive_key(password: &str) -> Vec<u8> {
     set_panic_hook();
     log(&format!("derive_key: {}", password));
-    shared::derive_key(password).to_vec()
+    shared::derive_key(password.as_bytes()).to_vec()
 }
 
 #[wasm_bindgen]

@@ -2,10 +2,6 @@ console.log("Prison");
 
 // Set variables in the worker
 const targetOrigin = document.getElementById("swenc-proxy-prison").dataset.swencProxyOrigin;
-// navigator.serviceWorker.controller.postMessage({
-//   type: "setTargetOrigin",
-//   origin: targetOrigin
-// });
 
 // Keep targetOrigin in history state
 console.log("State", history.state);

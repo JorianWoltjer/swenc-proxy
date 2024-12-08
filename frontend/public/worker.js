@@ -12,6 +12,13 @@ function isMetaRequest(url) {
   return url.origin === location.origin && url.pathname.startsWith('/swenc-proxy') &&
     url.pathname !== '/swenc-proxy/url';
 }
+async function sha256(buf) {
+  let hash = await crypto.subtle.digest("SHA-256", buf);
+  hash = Array.from(new Uint8Array(hash));
+  return hash
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 self.addEventListener('fetch', async (event) => {
   console.log(event);
@@ -41,6 +48,7 @@ self.addEventListener('message', async (event) => {
     case 'setKey':
       // Stored only here as in Serice Worker scope so websites with JavaScript can't access it
       globalThis.key = derive_key(key);
+      globalThis.keyFingerprint = await sha256(globalThis.key);
       break;
     case 'setTargetOrigin':
       globalThis.targetOrigin = event.data.origin;
@@ -94,7 +102,7 @@ async function fetchThroughProxy(request) {
 
   console.log('Proxying', data);
   return {
-    response: await fetch(`/swenc-proxy/proxy/${filename}`, {
+    response: await fetch(`/swenc-proxy/proxy/${filename}?` + new URLSearchParams({ key: globalThis.keyFingerprint }), {
       method: 'POST',
       body: serialize_proxy_request(data, globalThis.key),
     }),
@@ -105,10 +113,19 @@ async function fetchThroughProxy(request) {
 function htmlEncode(str) {
   return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 }
+function redirectToMain() {
+  return new Response(null, {
+    status: 302,
+    headers: {
+      'Location': '/swenc-proxy/',
+    },
+  });
+}
 
 async function fetchAndDecrypt(request) {
   if (!globalThis.key) {
-    throw new Error('Key not set');
+    self.registration.unregister();
+    return redirectToMain();
   }
 
   if (request.mode == "navigate") {
@@ -116,12 +133,7 @@ async function fetchAndDecrypt(request) {
       // All tabs are closed, reset the origin and back to main page
       console.log("All tabs closed, resetting target origin");
       globalThis.targetOrigin = null;
-      return new Response(null, {
-        status: 302,
-        headers: {
-          'Location': '/swenc-proxy/',
-        },
-      });
+      return redirectToMain();
     }
   }
 

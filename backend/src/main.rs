@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use std::{collections::HashMap, fs::read_to_string, sync::Arc};
 
 use axum::{
     Router,
     body::{Body, Bytes},
-    extract::State,
+    extract::{Query, State},
     response::{Html, IntoResponse, Redirect},
     routing::{get, post},
 };
@@ -13,12 +13,11 @@ use futures_util::SinkExt;
 use http::{HeaderMap, HeaderName};
 use regex::Regex;
 use reqwest::Client;
+use serde::Deserialize;
 use shared::{EncryptionCodec, ProxyRequest, derive_key};
 use tokio::net::TcpListener;
 use tokio_util::{codec::FramedWrite, io::ReaderStream};
 use tower_http::services::ServeDir;
-
-const KEY: &str = "secret";
 
 lazy_static::lazy_static! {
     static ref COOKIE_DOMAIN_RE: Regex = Regex::new(r"(?i)(;\s*domain=)[a-z0-9.-]+").unwrap();
@@ -27,7 +26,12 @@ lazy_static::lazy_static! {
 #[derive(Clone)]
 struct AppState {
     client: Arc<Client>,
-    key: [u8; 32],
+    keystore: HashMap<String, [u8; 32]>,
+}
+
+#[derive(Deserialize)]
+struct KeyQuery {
+    key: String,
 }
 
 fn force_https(url: &str) -> String {
@@ -42,9 +46,16 @@ fn force_https(url: &str) -> String {
 async fn proxy(
     axum_headers: HeaderMap,
     State(state): State<AppState>,
+    Query(KeyQuery { key }): Query<KeyQuery>,
     body: Bytes,
 ) -> impl IntoResponse {
-    let mut codec = EncryptionCodec::new(state.key);
+    // key= parameter is a fingerprint, look it up in the keystore
+    if !state.keystore.contains_key(&key) {
+        return (http::StatusCode::FORBIDDEN, HeaderMap::new(), Body::empty());
+    }
+    let key = state.keystore[&key];
+
+    let mut codec = EncryptionCodec::new(key);
     let decrypted = codec.decode_once(&body);
     let request: ProxyRequest = bincode::deserialize(&decrypted).unwrap();
 
@@ -121,7 +132,7 @@ async fn proxy(
     let (writer, reader) = tokio::io::duplex(64);
     let reader = ReaderStream::new(reader);
     tokio::spawn(async move {
-        let codec = EncryptionCodec::new(state.key);
+        let codec = EncryptionCodec::new(key);
         let mut writer = FramedWrite::new(writer, codec);
         while let Some(chunk) = response.chunk().await.unwrap() {
             writer.send(chunk.to_vec()).await.unwrap();
@@ -137,11 +148,21 @@ async fn main() {
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .unwrap();
-    let key = derive_key(KEY);
+    let keys = read_to_string("keys.txt").unwrap();
+    let keystore = keys
+        .split('\n')
+        .map(|key| {
+            // First derive to get a good key
+            let key = derive_key(key.as_bytes());
+            // Derive again to get a hash safe for sharing
+            let fingerprint = sha256::digest(&key);
+            (fingerprint, key)
+        })
+        .collect();
 
     let state = AppState {
         client: Arc::new(client),
-        key,
+        keystore,
     };
 
     // TODO: host on separate VPS due to SSRF concerns? force HTTPS helps a lot

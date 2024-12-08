@@ -14,10 +14,10 @@ use tokio_util::{
 const SALT: &[u8] = b"swenc-proxy-salt";
 const HEADER_SIZE: usize = 12 + 4; // nonce + length
 
-pub fn derive_key(password: &str) -> [u8; 32] {
+pub fn derive_key(password: &[u8]) -> [u8; 32] {
     let mut key = [0; 32];
     Argon2::default()
-        .hash_password_into(password.as_bytes(), SALT, &mut key)
+        .hash_password_into(password, SALT, &mut key)
         .unwrap();
     key
 }
