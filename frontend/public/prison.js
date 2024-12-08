@@ -1,11 +1,11 @@
 console.log("Prison");
 
 // Set variables in the worker
-const targetOrigin = new URL(document.baseURI).origin;
-navigator.serviceWorker.controller.postMessage({
-  type: "setTargetOrigin",
-  origin: targetOrigin
-});
+const targetOrigin = document.getElementById("swenc-proxy-prison").dataset.swencProxyOrigin;
+// navigator.serviceWorker.controller.postMessage({
+//   type: "setTargetOrigin",
+//   origin: targetOrigin
+// });
 
 // Keep targetOrigin in history state
 console.log("State", history.state);
@@ -42,7 +42,7 @@ navigator.serviceWorker.getRegistration = new Proxy(navigator.serviceWorker.getR
 });
 
 function getVisualUrl(url) {
-  url = new URL(url, location.origin);
+  url = new URL(url, location.href);
   if (url.origin === location.origin && url.pathname === '/swenc-proxy/url') {
     // Has embedded URL
     return getVisualUrl(new URLSearchParams(url.search).get('url'));
@@ -51,11 +51,11 @@ function getVisualUrl(url) {
     return new URL(url.pathname + url.search + url.hash, location.origin).href;
   }
 }
-function toFakeUrl(url) {
-  url = new URL(url, targetOrigin);
-  if (url.origin === location.origin || url.origin === targetOrigin) {
-    // Make it same-origin (<base> tag will remember the real origin)
-    return new URL(url.pathname + url.search + url.hash, location.origin).href;
+function toFakeUrl(originalUrl) {
+  url = new URL(originalUrl, location.href);
+  if (url.origin === location.origin) {
+    // Is same-origin, so this will always be captured (Service Worker tag will remember the real origin)
+    return originalUrl;
   } else {
     // Otherwise rewrite so we can intercept it
     return new URL("/swenc-proxy/url?" + new URLSearchParams({ url }), location.origin).href;

@@ -73,6 +73,7 @@ pub async fn decrypt_stream(
                 .unwrap();
         }
     }
+    log("decrypt_stream() done!");
     writer.close().unwrap();
 }
 

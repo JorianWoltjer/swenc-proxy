@@ -30,16 +30,11 @@ Since you are on Firefox, this may be due to missing 'import' support in Service
         }
       }
 
-      navigator.serviceWorker.ready.then((registration) => {
-        const script = document.createElement("script");
-        script.src = "/swenc-proxy/prison.js";
-        document.head.appendChild(script);
-      });
-
       document.getElementById("form").addEventListener("submit", (event) => {
         event.preventDefault();
         const url = event.target.url.value;
-        location.href = url;
+        // No need to set targetOrigin yet, because absolute URL here
+        location.href = new URL("/swenc-proxy/url?" + new URLSearchParams({ url }), location.origin).href;
       });
     </script>
     <form id="form">

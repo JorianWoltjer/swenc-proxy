@@ -80,7 +80,7 @@ impl Encoder<Vec<u8>> for EncryptionCodec {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct ProxyRequest {
     pub url: String,
     pub method: String,

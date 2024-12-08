@@ -30,6 +30,15 @@ struct AppState {
     key: [u8; 32],
 }
 
+fn force_https(url: &str) -> String {
+    // Force HTTPS, this disallows some HTTP-only sites but fixes Mixed Content issues
+    if url.starts_with("http://") {
+        url.replacen("http://", "https://", 1)
+    } else {
+        url.to_string()
+    }
+}
+
 async fn proxy(
     axum_headers: HeaderMap,
     State(state): State<AppState>,
@@ -39,7 +48,7 @@ async fn proxy(
     let decrypted = codec.decode_once(&body);
     let request: ProxyRequest = bincode::deserialize(&decrypted).unwrap();
 
-    let url = request.url;
+    let url = force_https(&request.url);
     let mut headers = HeaderMap::new();
     for (key, value) in request.headers {
         headers.insert(
@@ -47,9 +56,11 @@ async fn proxy(
             value.parse().unwrap(),
         );
     }
+    // Cookies can't be passed by JavaScript, so get it from the automatic Cookie header
     if let Some(cookie) = axum_headers.get("cookie") {
         headers.insert("cookie", cookie.clone());
     }
+    // Domain used later on to rescope cookies
     let axum_domain = axum_headers
         .get("host")
         .unwrap()
@@ -97,15 +108,16 @@ async fn proxy(
             // Modify cookies to be scoped to the proxy domain
             "set-cookie" => {
                 value = COOKIE_DOMAIN_RE
-                    .replace_all(value.to_str().unwrap(), format!("$1{}", axum_domain))
+                    .replace_all(value.to_str().unwrap(), format!("${{1}}{}", axum_domain))
                     .parse()
                     .unwrap();
             }
             _ => {}
         }
-        headers.insert(real_key, value);
+        headers.append(real_key, value);
     }
 
+    // Stream response body while decrypting
     let (writer, reader) = tokio::io::duplex(64);
     let reader = ReaderStream::new(reader);
     tokio::spawn(async move {
@@ -132,7 +144,7 @@ async fn main() {
         key,
     };
 
-    // TODO: host on separate VPS due to SSRF concerns
+    // TODO: host on separate VPS due to SSRF concerns? force HTTPS helps a lot
     let listen_address = "0.0.0.0:8000";
     let listener = TcpListener::bind(listen_address).await.unwrap();
     println!("Listening on http://{listen_address}");
@@ -155,7 +167,7 @@ async fn main() {
             "/swenc-proxy-sw.js", // Needs to be in the root directory
             get(|| async { JavaScript(include_str!("../../frontend/public/worker.js")) }),
         )
-        .route("/", get(|| async { Redirect::temporary("/swenc-proxy/") }))
+        .fallback(|| async { Redirect::temporary("/swenc-proxy/") })
         .with_state(state);
 
     axum::serve(listener, router).await.unwrap();

@@ -39,6 +39,7 @@ self.addEventListener('message', async (event) => {
   const { type, key } = event.data;
   switch (type) {
     case 'setKey':
+      // Stored only here as in Serice Worker scope so websites with JavaScript can't access it
       globalThis.key = derive_key(key);
       break;
     case 'setTargetOrigin':
@@ -49,7 +50,8 @@ self.addEventListener('message', async (event) => {
 
 // TODO: generalize these functions to 1 module. Maybe a rewriter class with .from() and .to()
 function getRealUrl(url) {
-  url = new URL(url, location.origin);
+  // Based on .href here to include relative directory
+  url = new URL(url, location.href);
   if (url.origin === location.origin && url.pathname === '/swenc-proxy/url') {
     // It is a cross-origin navigation request with URL embedded
     return new URLSearchParams(url.search).get('url');
@@ -62,7 +64,7 @@ function getRealUrl(url) {
   }
 }
 function toFakeUrl(url) {
-  if (url.origin === location.origin || url.origin === globalThis.targetOrigin) {
+  if (url.origin === location.origin) {
     // If same-origin, we can return relative URL
     return url.pathname + url.search + url.hash;
   } else {
@@ -70,11 +72,15 @@ function toFakeUrl(url) {
     return new URL("/swenc-proxy/url?" + new URLSearchParams({ url }), location.origin).href;
   }
 }
+function forceHTTPS(url) {
+  // Force HTTPS, this disallows some HTTP-only sites but fixes Mixed Content issues
+  return new URL(url).href.replace(/^http:/, 'https:');
+}
 
 async function fetchThroughProxy(request) {
   console.log('Request', request);
   const data = {
-    url: getRealUrl(request.url),
+    url: forceHTTPS(getRealUrl(request.url)),
     method: request.method,
     headers: Array.from(request.headers.entries()),
   }
@@ -85,8 +91,6 @@ async function fetchThroughProxy(request) {
 
   const filename = new URL(data.url).pathname.split('/').at(-1);
   let newOrigin = new URL(data.url).origin;
-  // Our proxy origin should be target origin
-  newOrigin = newOrigin === location.origin ? globalThis.targetOrigin : newOrigin;
 
   console.log('Proxying', data);
   return {
@@ -103,6 +107,10 @@ function htmlEncode(str) {
 }
 
 async function fetchAndDecrypt(request) {
+  if (!globalThis.key) {
+    throw new Error('Key not set');
+  }
+
   if (request.mode == "navigate") {
     if ((await self.clients.matchAll()).length === 0) {
       // All tabs are closed, reset the origin and back to main page
@@ -123,12 +131,13 @@ async function fetchAndDecrypt(request) {
   const decryptedStream = new ReadableStream({
     async start(controller) {
       if (request.mode == "navigate") {
+        globalThis.targetOrigin = newOrigin;
+
         console.log("Navigation request, injecting prison.js");
         // Inject prison.js to intercept navigations and set baseURI for relative URLs
         controller.enqueue(new TextEncoder().encode(`
 <!DOCTYPE html>
-<base href="${htmlEncode(newOrigin)}">
-<script src="${htmlEncode(location.origin)}/swenc-proxy/prison.js"></script>
+<script id="swenc-proxy-prison" src="${htmlEncode(location.origin)}/swenc-proxy/prison.js" data-swenc-proxy-origin="${htmlEncode(newOrigin)}"></script>
 `));
       }
 
@@ -141,7 +150,7 @@ async function fetchAndDecrypt(request) {
     // Rewrite Location header because fetch() will follow it
     headers = new Headers({
       ...headers,
-      'Location': toFakeUrl(new URL(headers.get('X-Location'), newOrigin).href),
+      'Location': toFakeUrl(new URL(headers.get('X-Location'), location.href).href),
     })
   }
   // Don't include body for status codes that shouldn't have one
