@@ -15,6 +15,7 @@ if (history.state?.targetOrigin && history.state.targetOrigin !== targetOrigin) 
     origin: history.state.targetOrigin
   });
   location.reload();
+  throw new Error("Reloading");
 }
 history.replaceState({ targetOrigin }, "", getVisualUrl(location.href));
 
@@ -64,26 +65,33 @@ function toFakeUrl(url) {
 function interceptMutation(mutations) {
   console.log(mutations);
 
+  function patchAnchor(node) {
+    console.log("Intercepting <a>", node);
+    node.href = toFakeUrl(node.href);
+  }
+  function patchIframe(node) {
+    console.log("Intercepting <iframe>", node);
+    if (node.src) {
+      node.src = toFakeUrl(node.src);
+    }
+  }
+
   for (const mutation of mutations) {
     for (const node of mutation.addedNodes) {
       // Change direct nodes
       if (node.tagName === "A") {
-        console.log("Intercepting <a>", node);
-        node.href = toFakeUrl(node.href);
+        patchAnchor(node);
       } else if (node.tagName === "IFRAME") {
-        console.log("Intercepting <iframe>", node);
-        node.src = toFakeUrl(node.src);
+        patchIframe(node);
       } else if (typeof node.querySelectorAll !== "function") {
         continue;  // Skip text nodes
       }
       // Change child nodes
       node.querySelectorAll("a").forEach((node) => {
-        console.log("Intercepting <a>", node);
-        node.href = toFakeUrl(node.href);
+        patchAnchor(node);
       });
       node.querySelectorAll("iframe").forEach((node) => {
-        console.log("Intercepting <iframe>", node);
-        node.src = toFakeUrl(node.src);
+        patchIframe(node);
       });
     }
   }

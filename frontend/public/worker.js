@@ -55,7 +55,7 @@ function getRealUrl(url) {
     return new URLSearchParams(url.search).get('url');
   } else if (url.origin === location.origin) {
     // It is a same-origin request, rewrite the origin
-    return new URL(url.pathname + url.search + url.hash, globalThis.targetOrigin).href;
+    return new URL(url.pathname + url.search + url.hash, globalThis.targetOrigin || location.origin).href;
   } else {
     // It is a background cross-origin request
     return url.href;
@@ -126,6 +126,7 @@ async function fetchAndDecrypt(request) {
   const decryptedStream = new ReadableStream({
     async start(controller) {
       if (request.mode == "navigate") {
+        console.log("Navigation request, injecting prison.js");
         // Inject prison.js to intercept navigations and set baseURI for relative URLs
         controller.enqueue(new TextEncoder().encode(`
 <!DOCTYPE html>
@@ -149,6 +150,7 @@ async function fetchAndDecrypt(request) {
   // Don't include body for status codes that shouldn't have one
   const stream = [101, 204, 205, 304].includes(response.status) ? null : decryptedStream;
   // Return a new Response with the decrypted stream
+  console.log("Returning stream");
   return new Response(stream, {
     status: response.status,
     statusText: response.statusText,

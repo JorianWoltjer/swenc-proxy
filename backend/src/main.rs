@@ -74,7 +74,7 @@ async fn proxy(
     if let Some(cookie) = axum_headers.get("cookie") {
         headers.insert("cookie", cookie.clone());
     }
-    let domain = axum_headers
+    let axum_domain = axum_headers
         .get("host")
         .unwrap()
         .to_str()
@@ -113,28 +113,31 @@ async fn proxy(
     let mut headers = HeaderMap::new();
     let mut last_key = None;
     for (key, mut value) in response_headers {
-        if let Some(mut key) = key {
-            last_key = Some(key.clone());
-            match key.as_str() {
-                "transfer-encoding"
-                | "content-length"
-                | "content-security-policy"
-                | "content-security-policy-report-only"
-                | "x-frame-options" => continue,
-                "location" => key = "x-location".parse().unwrap(),
-                "set-cookie" => {
-                    value = COOKIE_DOMAIN_RE
-                        .replace_all(value.to_str().unwrap(), format!("${{1}}{}", domain))
-                        .parse()
-                        .unwrap();
-                }
-                _ => {}
-            }
-
-            headers.insert(key, value.clone());
+        let mut real_key = if key.is_none() {
+            last_key.clone().unwrap()
         } else {
-            headers.append(last_key.clone().unwrap(), value.clone());
+            last_key = key.clone();
+            key.unwrap()
+        };
+        match real_key.as_str() {
+            // Skip these special response headers
+            "transfer-encoding"
+            | "content-length"
+            | "content-security-policy"
+            | "content-security-policy-report-only"
+            | "x-frame-options" => continue,
+            // Modify `Location` header because fetch() follows redirects
+            "location" => real_key = "x-location".parse().unwrap(),
+            // Modify cookies to be scoped to the proxy domain
+            "set-cookie" => {
+                value = COOKIE_DOMAIN_RE
+                    .replace_all(value.to_str().unwrap(), format!("$1{}", axum_domain))
+                    .parse()
+                    .unwrap();
+            }
+            _ => {}
         }
+        headers.insert(real_key, value);
     }
 
     (

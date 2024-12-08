@@ -1,5 +1,5 @@
 
 [workspace]
 
-members = ["frontend", "backend"]
+members = ["frontend", "backend", "crypto"]
 # TODO: crypto crate
