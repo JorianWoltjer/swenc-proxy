@@ -2,16 +2,16 @@ use std::io;
 
 use aes_gcm::{
     AeadCore, Aes256Gcm, KeyInit, Nonce,
-    aead::{self, Aead, OsRng},
+    aead::{Aead, OsRng},
 };
 use argon2::Argon2;
-use tokio::{
-    io::{AsyncRead, AsyncReadExt},
-    sync::mpsc,
+use tokio_util::{
+    bytes::{Buf, BufMut, BytesMut},
+    codec::{Decoder, Encoder},
 };
-use tokio_util::bytes::Bytes;
 
 const SALT: &[u8] = b"wasm-dl-salt";
+const HEADER_SIZE: usize = 12 + 4; // nonce + length
 
 pub fn derive_key(password: &str) -> [u8; 32] {
     let mut key = [0; 32];
@@ -21,77 +21,50 @@ pub fn derive_key(password: &str) -> [u8; 32] {
     key
 }
 
-// TODO: implement FramedRead (https://docs.rs/tokio-util/latest/tokio_util/codec/index.html)
-pub struct EncryptedChunk {
-    pub nonce: aead::Nonce<Aes256Gcm>,
-    pub ciphertext: Vec<u8>,
+pub struct EncryptionCodec {
+    pub cipher: Aes256Gcm,
 }
-impl EncryptedChunk {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&self.nonce);
-        bytes.extend_from_slice(&(self.ciphertext.len() as u32).to_le_bytes());
-        bytes.extend_from_slice(&self.ciphertext);
-        bytes
-    }
-
-    pub fn from_bytes(bytes: &[u8]) -> Self {
-        let nonce = *Nonce::from_slice(&bytes[..12]);
-        let ciphertext = bytes[16..].to_vec();
-
-        Self { nonce, ciphertext }
-    }
-
-    pub async fn from_reader<R: AsyncRead + Unpin>(mut reader: R) -> Result<Self, io::Error> {
-        let mut nonce = [0; 12];
-        reader.read_exact(&mut nonce).await?;
-        let nonce = *Nonce::from_slice(&nonce);
-        let mut len = [0; 4];
-        reader.read_exact(&mut len).await?;
-        let len = u32::from_le_bytes(len) as usize;
-        let mut ciphertext = vec![0; len];
-        reader.read_exact(&mut ciphertext).await?;
-
-        Ok(Self { nonce, ciphertext })
-    }
-
-    pub fn decrypt(&self, key: &[u8]) -> Vec<u8> {
-        let cipher = aes_gcm::Aes256Gcm::new_from_slice(key).unwrap();
-        cipher.decrypt(&self.nonce, &*self.ciphertext).unwrap()
-    }
-
-    pub fn encrypt(key: &[u8], plaintext: &[u8]) -> Self {
-        let cipher = aes_gcm::Aes256Gcm::new_from_slice(key).unwrap();
-        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-        let ciphertext = cipher.encrypt(&nonce, plaintext).unwrap();
-
-        Self { nonce, ciphertext }
-    }
-
-    pub async fn encrypt_reader<R: AsyncRead + Unpin>(
-        mut reader: R,
-        key: &[u8],
-        tx: mpsc::UnboundedSender<Result<Vec<u8>, io::Error>>,
-    ) {
-        let mut buffer = [0; 4096];
-        while let Ok(len) = reader.read(&mut buffer).await {
-            if len == 0 {
-                break;
-            }
-            let chunk = Self::encrypt(key, &buffer[..len]);
-            tx.send(Ok(chunk.to_bytes())).unwrap();
-            buffer = [0; 4096];
+impl EncryptionCodec {
+    pub fn new(key: [u8; 32]) -> Self {
+        Self {
+            cipher: Aes256Gcm::new_from_slice(&key).unwrap(),
         }
     }
 }
+impl Decoder for EncryptionCodec {
+    type Item = Vec<u8>;
+    type Error = io::Error;
 
-pub async fn decrypt_stream<R: AsyncRead + Unpin>(
-    mut reader: R,
-    key: &[u8],
-    tx: mpsc::Sender<Bytes>,
-) {
-    while let Ok(chunk) = EncryptedChunk::from_reader(&mut reader).await {
-        let plaintext = chunk.decrypt(key);
-        tx.send(Bytes::from(plaintext)).await.unwrap();
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        if src.len() < HEADER_SIZE {
+            // Not enough bytes to read nonce and length
+            return Ok(None);
+        }
+        let nonce = *Nonce::from_slice(&src[..12]);
+        let len =
+            u32::from_le_bytes(src[HEADER_SIZE - 4..HEADER_SIZE].try_into().unwrap()) as usize;
+        if src.len() < HEADER_SIZE + len {
+            // Not enough bytes to read the whole chunk
+            return Ok(None);
+        }
+        let ciphertext = &src[HEADER_SIZE..HEADER_SIZE + len];
+        let plaintext = self.cipher.decrypt(&nonce, ciphertext).unwrap();
+        src.advance(HEADER_SIZE + len);
+
+        Ok(Some(plaintext))
+    }
+}
+impl Encoder<Vec<u8>> for EncryptionCodec {
+    type Error = io::Error;
+
+    fn encode(&mut self, item: Vec<u8>, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+        let ciphertext = self.cipher.encrypt(&nonce, &*item).unwrap();
+        dst.reserve(HEADER_SIZE + ciphertext.len());
+        dst.put_slice(nonce.as_ref());
+        dst.put_u32_le(ciphertext.len() as u32);
+        dst.put_slice(&ciphertext);
+
+        Ok(())
     }
 }

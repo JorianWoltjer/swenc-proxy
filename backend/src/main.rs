@@ -1,4 +1,4 @@
-use std::{io, sync::Arc};
+use std::sync::Arc;
 
 use axum::{
     Router,
@@ -9,15 +9,14 @@ use axum::{
 };
 use axum_extra::response::JavaScript;
 use base64::{Engine, prelude::BASE64_STANDARD};
-use crypto::{EncryptedChunk, derive_key};
-use futures_util::TryStreamExt;
+use crypto::{EncryptionCodec, derive_key};
+use futures_util::SinkExt;
 use http::{HeaderMap, HeaderName};
 use regex::Regex;
 use reqwest::Client;
 use serde::Deserialize;
-use tokio::{net::TcpListener, sync::mpsc};
-use tokio_stream::wrappers::UnboundedReceiverStream;
-use tokio_util::io::StreamReader;
+use tokio::net::TcpListener;
+use tokio_util::{codec::FramedWrite, io::ReaderStream};
 use tower_http::services::ServeDir;
 
 const KEY: &str = "secret";
@@ -71,7 +70,7 @@ async fn proxy(
         .map(|body| BASE64_STANDARD.decode(body).unwrap());
 
     println!("Proxying: {}", url);
-    let response = state
+    let mut response = state
         .client
         .request(method, &url)
         .headers(headers)
@@ -79,7 +78,6 @@ async fn proxy(
         .send()
         .await
         .unwrap();
-    let (tx, rx) = mpsc::unbounded_channel::<Result<Vec<u8>, std::io::Error>>();
 
     let response_headers = response.headers().clone();
     let status_code = response.status();
@@ -114,16 +112,17 @@ async fn proxy(
         headers.insert(real_key, value);
     }
 
-    let reader = StreamReader::new(response.bytes_stream().map_err(io::Error::other));
+    let (writer, reader) = tokio::io::duplex(64);
+    let reader = ReaderStream::new(reader);
     tokio::spawn(async move {
-        EncryptedChunk::encrypt_reader(reader, &state.key, tx).await;
+        let codec = EncryptionCodec::new(state.key);
+        let mut writer = FramedWrite::new(writer, codec);
+        while let Some(chunk) = response.chunk().await.unwrap() {
+            writer.send(chunk.to_vec()).await.unwrap();
+        }
     });
 
-    (
-        status_code,
-        headers,
-        Body::from_stream(UnboundedReceiverStream::new(rx)),
-    )
+    (status_code, headers, Body::from_stream(reader))
 }
 
 #[tokio::main]

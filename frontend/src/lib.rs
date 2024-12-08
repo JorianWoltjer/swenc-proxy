@@ -2,10 +2,9 @@ mod utils;
 
 use std::io;
 
+use crypto::EncryptionCodec;
 use futures::StreamExt;
-use tokio::sync::mpsc;
-use tokio_util::bytes::Bytes;
-use tokio_util::io::StreamReader;
+use tokio_util::{bytes::Bytes, codec::FramedRead, io::StreamReader};
 use utils::set_panic_hook;
 use wasm_bindgen::prelude::*;
 use wasm_streams::ReadableStream;
@@ -42,22 +41,19 @@ pub async fn decrypt(
         let value = value.to_vec();
         Ok::<_, io::Error>(Bytes::from(value))
     });
-    let mut reader = StreamReader::new(stream);
+    let reader = StreamReader::new(stream);
     // TODO: BufReader?
 
-    let (tx, mut rx) = mpsc::channel::<Bytes>(32);
-    wasm_bindgen_futures::spawn_local(async move {
-        while let Some(chunk) = rx.recv().await {
-            log(&format!("len: {:?}", chunk.len()));
-            unsafe {
-                writer
-                    .enqueue_with_chunk(&Uint8Array::new(&Uint8Array::view(&chunk)))
-                    .unwrap();
-            }
-        }
-        writer.close().unwrap();
-        log("done!");
-    });
+    let codec = EncryptionCodec::new(key.try_into().unwrap());
+    let mut reader = FramedRead::new(reader, codec);
 
-    crypto::decrypt_stream(&mut reader, key, tx).await;
+    while let Some(chunk) = reader.next().await {
+        let chunk = chunk.unwrap();
+        log(&format!("len: {:?}", chunk.len()));
+        unsafe {
+            writer
+                .enqueue_with_chunk(&Uint8Array::new(&Uint8Array::view(&chunk)))
+                .unwrap();
+        }
+    }
 }
