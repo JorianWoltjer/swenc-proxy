@@ -4,8 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-aes-gcm = "0.10.3"
-argon2 = "0.5.3"
 axum = { version = "0.7.9", features = ["macros", "tokio"] }
 axum-extra = "0.9.6"
 base64 = "0.22.1"
@@ -19,3 +17,4 @@ tokio = { version = "1.41.1", features = ["rt-multi-thread"] }
 tokio-stream = "0.1.16"
 tokio-util = "0.7.12"
 tower-http = { version = "0.6.2", features = ["fs"] }
+crypto = { path = "../crypto" }

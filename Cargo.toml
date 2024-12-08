@@ -1,5 +1,8 @@
-
 [workspace]
+resolver = "2"
 
 members = ["frontend", "backend", "crypto"]
-# TODO: crypto crate
+
+[profile.release.package.frontend]
+# Tell `rustc` to optimize for small code size.
+opt-level = "s"

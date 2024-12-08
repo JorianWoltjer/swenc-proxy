@@ -4,3 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+tokio = "1.42.0"
+tokio-util = { version = "0.7.12", features = ["io"] }
+argon2 = "0.5.3"
+getrandom = { version = "0.2.15", features = ["js"] }
+aes-gcm = "0.10.3"

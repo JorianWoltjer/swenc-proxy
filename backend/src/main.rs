@@ -1,10 +1,5 @@
-use std::sync::Arc;
+use std::{io, sync::Arc};
 
-use aes_gcm::{
-    AeadCore, Aes256Gcm, KeyInit,
-    aead::{Aead, Nonce, OsRng},
-};
-use argon2::Argon2;
 use axum::{
     Router,
     body::Body,
@@ -14,16 +9,18 @@ use axum::{
 };
 use axum_extra::response::JavaScript;
 use base64::{Engine, prelude::BASE64_STANDARD};
+use crypto::{EncryptedChunk, derive_key};
+use futures_util::TryStreamExt;
 use http::{HeaderMap, HeaderName};
 use regex::Regex;
 use reqwest::Client;
 use serde::Deserialize;
 use tokio::{net::TcpListener, sync::mpsc};
 use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_util::io::StreamReader;
 use tower_http::services::ServeDir;
 
-const KEY: &[u8] = b"secret";
-const SALT: &[u8] = b"wasm-dl-salt";
+const KEY: &str = "secret";
 
 lazy_static::lazy_static! {
     static ref COOKIE_DOMAIN_RE: Regex = Regex::new(r"(?i)(;\s*domain=)[a-z0-9.-]+").unwrap();
@@ -32,7 +29,7 @@ lazy_static::lazy_static! {
 #[derive(Clone)]
 struct AppState {
     client: Arc<Client>,
-    cipher: Aes256Gcm,
+    key: [u8; 32],
 }
 
 // TODO: encrypt this too with same key
@@ -42,20 +39,6 @@ struct ProxyRequest {
     method: String,
     headers: Vec<(String, String)>,
     body: Option<String>,
-}
-
-struct EncryptedChunk {
-    nonce: Nonce<Aes256Gcm>,
-    ciphertext: Vec<u8>,
-}
-impl EncryptedChunk {
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&self.nonce);
-        bytes.extend_from_slice(&(self.ciphertext.len() as u32).to_le_bytes());
-        bytes.extend_from_slice(&self.ciphertext);
-        bytes
-    }
 }
 
 async fn proxy(
@@ -88,7 +71,7 @@ async fn proxy(
         .map(|body| BASE64_STANDARD.decode(body).unwrap());
 
     println!("Proxying: {}", url);
-    let mut response = state
+    let response = state
         .client
         .request(method, &url)
         .headers(headers)
@@ -100,15 +83,6 @@ async fn proxy(
 
     let response_headers = response.headers().clone();
     let status_code = response.status();
-
-    tokio::spawn(async move {
-        while let Some(chunk) = response.chunk().await.unwrap() {
-            let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-            let ciphertext = state.cipher.encrypt(&nonce, &*chunk).unwrap();
-            tx.send(Ok(EncryptedChunk { nonce, ciphertext }.to_bytes()))
-                .unwrap();
-        }
-    });
 
     let mut headers = HeaderMap::new();
     let mut last_key = None;
@@ -140,6 +114,11 @@ async fn proxy(
         headers.insert(real_key, value);
     }
 
+    let reader = StreamReader::new(response.bytes_stream().map_err(io::Error::other));
+    tokio::spawn(async move {
+        EncryptedChunk::encrypt_reader(reader, &state.key, tx).await;
+    });
+
     (
         status_code,
         headers,
@@ -153,14 +132,11 @@ async fn main() {
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .unwrap();
-    let mut key = [0; 32];
-    Argon2::default()
-        .hash_password_into(KEY, SALT, &mut key)
-        .unwrap();
+    let key = derive_key(KEY);
 
     let state = AppState {
         client: Arc::new(client),
-        cipher: Aes256Gcm::new_from_slice(&key).unwrap(),
+        key,
     };
 
     // TODO: host on separate VPS due to SSRF concerns
