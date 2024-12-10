@@ -1,20 +1,16 @@
 import { decrypt_stream, derive_key, serialize_proxy_request, sha256 } from '/swenc-proxy/utils.js';
 
-console.log('Worker loaded');
-
 self.addEventListener("activate", (event) => {
   event.waitUntil(clients.claim());
 });
 
 function isMetaRequest(url) {
   // Any requests to /swenc-proxy shouldn't be intercepted, except for /url for dummy requests
-  console.log(url);
   return url.origin === location.origin && url.pathname.startsWith('/swenc-proxy') &&
     url.pathname !== '/swenc-proxy/url';
 }
 
 self.addEventListener('fetch', async (event) => {
-  console.log(event);
   const url = new URL(event.request.url);
 
   // Don't intercept meta or non-HTTP requests
@@ -26,13 +22,10 @@ self.addEventListener('fetch', async (event) => {
   }
 
   // Start proxying
-  console.log("Intercepting", event.request.url);
   event.respondWith(fetchAndDecrypt(event.request));
 });
 
 self.addEventListener('message', async (event) => {
-  console.log('Message', event);
-
   const { type } = event.data;
   switch (type) {
     case 'setKey':
@@ -50,7 +43,6 @@ self.addEventListener('message', async (event) => {
   }
 });
 
-// TODO: generalize these functions to 1 module. Maybe a rewriter class with .from() and .to()
 function getRealUrl(url) {
   // Based on .href here to include relative directory
   url = new URL(url, location.href);
@@ -80,13 +72,11 @@ function forceHTTPS(url) {
 }
 
 async function fetchThroughProxy(request) {
-  console.log('Request', request);
   const data = {
     url: forceHTTPS(getRealUrl(request.url)),
     method: request.method,
     headers: Array.from(request.headers.entries()),
   }
-  console.log('Request Data', data);
   if (request.body) {
     //data.body = new Uint8Array(await request.arrayBuffer());
     data.body = await request.arrayBuffer();
@@ -96,7 +86,6 @@ async function fetchThroughProxy(request) {
   const filename = new URL(data.url).pathname.split('/').at(-1);
   let newOrigin = new URL(data.url).origin;
 
-  console.log('Proxying', data);
   return {
     response: await fetch(`/swenc-proxy/proxy/${encodeURIComponent(filename)}?` + new URLSearchParams({ key: globalThis.keyFingerprint }), {
       method: 'POST',
@@ -127,7 +116,6 @@ async function fetchAndDecrypt(request) {
   if (request.mode == "navigate") {
     if ((await self.clients.matchAll()).length === 0) {
       // All tabs are closed, reset the origin and back to main page
-      console.log("All tabs closed, resetting target origin");
       globalThis.targetOrigin = null;
       return redirectToMain();
     }
@@ -141,7 +129,6 @@ async function fetchAndDecrypt(request) {
       if (request.mode == "navigate") {
         globalThis.targetOrigin = newOrigin;
 
-        console.log("Navigation request, injecting prison.js");
         // Inject prison.js to intercept navigations and set baseURI for relative URLs
         controller.enqueue(new TextEncoder().encode(`
 <!DOCTYPE html>
@@ -164,7 +151,6 @@ async function fetchAndDecrypt(request) {
   // Don't include body for status codes that shouldn't have one
   const stream = [101, 204, 205, 304].includes(response.status) ? null : decryptedStream;
   // Return a new Response with the decrypted stream
-  console.log("Returning stream");
   return new Response(stream, {
     status: response.status,
     statusText: response.statusText,

@@ -105,6 +105,7 @@
       keyInput.addEventListener("change", async () => {
         const key = keyInput.value;
 
+        keyInput.setCustomValidity("Checking key...");
         if (await checkKey(key)) {
           keyInput.setCustomValidity("");
           urlInputGroup.querySelector("input").removeAttribute("disabled");

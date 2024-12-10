@@ -15,9 +15,6 @@ use web_sys::{
 
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(js_namespace = console)]
-    fn log(s: &str);
-
     pub type JsProxyRequest;
 
     #[wasm_bindgen(method, getter)]
@@ -35,8 +32,6 @@ extern "C" {
 
 #[wasm_bindgen]
 pub fn derive_key(password: &str) -> Vec<u8> {
-    set_panic_hook();
-    log(&format!("derive_key: {}", password));
     shared::derive_key(password.as_bytes()).to_vec()
 }
 
@@ -46,10 +41,6 @@ pub async fn decrypt_stream(
     writer: ReadableStreamDefaultController,
     key: &[u8],
 ) {
-    // TODO: error handling on wrong key
-    set_panic_hook();
-    log("decrypt_stream()");
-
     let stream = ReadableStream::from_raw(stream).into_stream();
     let stream = stream.map(|value| {
         let value =
@@ -59,21 +50,18 @@ pub async fn decrypt_stream(
         Ok::<_, io::Error>(Bytes::from(value))
     });
     let reader = StreamReader::new(stream);
-    // TODO: BufReader?
 
     let codec = EncryptionCodec::new(key.try_into().unwrap());
     let mut reader = FramedRead::new(reader, codec);
 
     while let Some(chunk) = reader.next().await {
         let chunk = chunk.unwrap();
-        log(&format!("len: {:?}", chunk.len()));
         unsafe {
             writer
                 .enqueue_with_chunk(&Uint8Array::new(&Uint8Array::view(&chunk)))
                 .unwrap();
         }
     }
-    log("decrypt_stream() done!");
     writer.close().unwrap();
 }
 

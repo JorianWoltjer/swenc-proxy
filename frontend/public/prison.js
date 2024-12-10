@@ -1,10 +1,7 @@
-console.log("Prison");
-
 // Set variables in the worker
 const targetOrigin = document.getElementById("swenc-proxy-prison").dataset.swencProxyOrigin;
 
 // Keep targetOrigin in history state
-console.log("State", history.state);
 if (history.state?.targetOrigin && history.state.targetOrigin !== targetOrigin) {
   navigator.serviceWorker.controller.postMessage({
     type: "setTargetOrigin",
@@ -59,14 +56,10 @@ function toFakeUrl(originalUrl) {
 }
 
 function interceptMutation(mutations) {
-  console.log(mutations);
-
   function patchAnchor(node) {
-    console.log("Intercepting <a>", node);
     node.href = toFakeUrl(node.href);
   }
   function patchIframe(node) {
-    console.log("Intercepting <iframe>", node);
     if (node.src) {
       node.src = toFakeUrl(node.src);
     }
@@ -101,7 +94,6 @@ observer.observe(document.documentElement, {
 });
 window.open = new Proxy(window.open, {
   apply(target, thisArg, args) {
-    console.log("Intercepting window.open", args[0]);
     args[0] = toFakeUrl(args[0]);
     return target.apply(thisArg, args);
   },
@@ -109,7 +101,6 @@ window.open = new Proxy(window.open, {
 
 // Intercept all kinds of navigations (Chrome only, https://caniuse.com/mdn-api_navigation_navigate_event)
 navigation.addEventListener("navigate", (event) => {
-  console.log("Intercepting navigate", event.destination);
   // Need to block cross-origin navigations
   if (new URL(event.destination.url).origin !== location.origin) {
     event.preventDefault();
@@ -120,7 +111,6 @@ navigation.addEventListener("navigate", (event) => {
 // Intercept history changes, because won't work cross-origin
 const pushReplaceState = {
   apply(target, thisArg, args) {
-    console.log("Intercepting pushReplaceState", args[2]);
     args[2] = toFakeUrl(args[2]);
     return target.apply(thisArg, args);
   },

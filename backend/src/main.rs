@@ -176,12 +176,10 @@ async fn main() {
         keystore,
     };
 
-    // TODO: host on separate VPS due to SSRF concerns? force HTTPS helps a lot
     let listen_address = "0.0.0.0:8000";
     let listener = TcpListener::bind(listen_address).await.unwrap();
     println!("Listening on http://{listen_address}");
 
-    // TODO: also make CSRF proof with fetch-mode
     let router = Router::new()
         .nest(
             "/swenc-proxy",
