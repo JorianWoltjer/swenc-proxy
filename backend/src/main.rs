@@ -10,7 +10,7 @@ use axum::{
 use axum_extra::response::JavaScript;
 use base64::{Engine, prelude::BASE64_STANDARD};
 use futures_util::SinkExt;
-use http::{HeaderMap, HeaderName};
+use http::{HeaderMap, HeaderName, StatusCode};
 use regex::Regex;
 use reqwest::Client;
 use serde::Deserialize;
@@ -40,6 +40,17 @@ fn force_https(url: &str) -> String {
         url.replacen("http://", "https://", 1)
     } else {
         url.to_string()
+    }
+}
+
+async fn check_key(
+    State(state): State<AppState>,
+    Query(KeyQuery { key }): Query<KeyQuery>,
+) -> StatusCode {
+    if state.keystore.contains_key(&key) {
+        StatusCode::OK
+    } else {
+        StatusCode::FORBIDDEN
     }
 }
 
@@ -177,6 +188,7 @@ async fn main() {
             Router::new()
                 .route("/proxy/", post(proxy))
                 .route("/proxy/:filename", post(proxy))
+                .route("/check", get(check_key))
                 .nest_service("/pkg", ServeDir::new("../frontend/pkg"))
                 .fallback_service(ServeDir::new("../frontend/public")),
         )
@@ -187,6 +199,15 @@ async fn main() {
         .route(
             "/swenc-proxy-sw.js", // Needs to be in the root directory
             get(|| async { JavaScript(include_str!("../../frontend/public/worker.js")) }),
+        )
+        .route(
+            "/favicon.ico",
+            get(|| async {
+                (
+                    [("Content-Type", "image/x-icon")],
+                    include_bytes!("../../frontend/public/favicon.ico"),
+                )
+            }),
         )
         .fallback(|| async { Redirect::temporary("/swenc-proxy/") })
         .with_state(state);

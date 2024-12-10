@@ -30,7 +30,7 @@ extern "C" {
     fn headers(this: &JsProxyRequest) -> js_sys::Array;
 
     #[wasm_bindgen(method, getter)]
-    fn body(this: &JsProxyRequest) -> Option<String>;
+    fn body(this: &JsProxyRequest) -> Option<Vec<u8>>;
 }
 
 #[wasm_bindgen]

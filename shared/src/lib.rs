@@ -85,5 +85,5 @@ pub struct ProxyRequest {
     pub url: String,
     pub method: String,
     pub headers: Vec<(String, String)>,
-    pub body: Option<String>,
+    pub body: Option<Vec<u8>>,
 }

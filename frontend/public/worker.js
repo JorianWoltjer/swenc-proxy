@@ -1,4 +1,4 @@
-import init, { decrypt_stream, derive_key, serialize_proxy_request } from '/swenc-proxy/pkg/frontend.js';
+import { decrypt_stream, derive_key, serialize_proxy_request, sha256 } from '/swenc-proxy/utils.js';
 
 console.log('Worker loaded');
 
@@ -11,13 +11,6 @@ function isMetaRequest(url) {
   console.log(url);
   return url.origin === location.origin && url.pathname.startsWith('/swenc-proxy') &&
     url.pathname !== '/swenc-proxy/url';
-}
-async function sha256(buf) {
-  let hash = await crypto.subtle.digest("SHA-256", buf);
-  hash = Array.from(new Uint8Array(hash));
-  return hash
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
 }
 
 self.addEventListener('fetch', async (event) => {
@@ -38,20 +31,21 @@ self.addEventListener('fetch', async (event) => {
 });
 
 self.addEventListener('message', async (event) => {
-  // Always called at the start
-  await init();
-
   console.log('Message', event);
 
-  const { type, key } = event.data;
+  const { type } = event.data;
   switch (type) {
     case 'setKey':
+      const { key } = event.data;
       // Stored only here as in Serice Worker scope so websites with JavaScript can't access it
       globalThis.key = derive_key(key);
       globalThis.keyFingerprint = await sha256(globalThis.key);
       break;
     case 'setTargetOrigin':
       globalThis.targetOrigin = event.data.origin;
+      break;
+    case 'isKeySet':
+      event.source.postMessage({ type, isSet: !!globalThis.key });
       break;
   }
 });
@@ -94,15 +88,17 @@ async function fetchThroughProxy(request) {
   }
   console.log('Request Data', data);
   if (request.body) {
-    data.body = btoa(String.fromCharCode(...new Uint8Array(await request.arrayBuffer())));
+    //data.body = new Uint8Array(await request.arrayBuffer());
+    data.body = await request.arrayBuffer();
   }
 
+  // Set filename for automatic content type detection and download filename
   const filename = new URL(data.url).pathname.split('/').at(-1);
   let newOrigin = new URL(data.url).origin;
 
   console.log('Proxying', data);
   return {
-    response: await fetch(`/swenc-proxy/proxy/${filename}?` + new URLSearchParams({ key: globalThis.keyFingerprint }), {
+    response: await fetch(`/swenc-proxy/proxy/${encodeURIComponent(filename)}?` + new URLSearchParams({ key: globalThis.keyFingerprint }), {
       method: 'POST',
       body: serialize_proxy_request(data, globalThis.key),
     }),
