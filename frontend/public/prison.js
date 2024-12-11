@@ -51,6 +51,7 @@ function toFakeUrl(originalUrl) {
     return originalUrl;
   } else {
     // Otherwise rewrite so we can intercept it
+    // TODO: set filename as end of path here to fix downloads
     return new URL("/swenc-proxy/url?" + new URLSearchParams({ url }), location.origin).href;
   }
 }

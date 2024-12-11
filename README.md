@@ -22,15 +22,15 @@ Then, the `frontend/` should be built with the following command:
 wasm-pack build --no-pack --target web
 ```
 
-Finally, you can build the `backend/` with the following command:
+Finally, you can run the `backend/` with the following command:
 
 (requirement: https://www.rust-lang.org/tools/install)
 
 ```sh
-cargo build --release
+cargo run --release
 ```
 
-This builds a `./target/release/backend` binary in the main directory. By default, it listens on `0.0.0.0:8000` but this can be changed with the [`BIND`](./backend/src/main.rs#L22) variable. When you run the binary, it will open up the HTTP server and start accepting connections. You should see the UI when visiting http://localhost:8000.
+By default, it listens on `0.0.0.0:8000` but this can be changed with the [`BIND`](./backend/src/main.rs#L22) variable. When you run the binary, it will open up the HTTP server and start accepting connections. You should see the UI when visiting http://localhost:8000.
 
 ### Usage
 
