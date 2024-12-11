@@ -164,6 +164,8 @@ async fn main() {
     let keys = read_to_string("keys.txt").unwrap();
     let keystore = keys
         .split('\n')
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
         .map(|key| {
             // First derive to get a good key
             let key = derive_key(key.as_bytes());
@@ -171,7 +173,9 @@ async fn main() {
             let fingerprint = sha256::digest(&key);
             (fingerprint, key)
         })
-        .collect();
+        .collect::<HashMap<_, _>>();
+
+    println!("Loaded {} keys", keystore.len());
 
     let state = AppState {
         client: Arc::new(client),
