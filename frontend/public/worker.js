@@ -126,7 +126,11 @@ async function fetchAndDecrypt(request) {
   // Create a stream for decrypted content
   const decryptedStream = new ReadableStream({
     async start(controller) {
-      if (request.mode == "navigate") {
+      console.log(request);
+      if (request.mode == "navigate" &&
+        !response.headers.get("Content-Disposition")?.includes("attachment") &&
+        response.headers.get("Content-Type")?.includes("text/html")) {
+
         globalThis.targetOrigin = newOrigin;
 
         // Inject prison.js to intercept navigations and set baseURI for relative URLs

@@ -2,7 +2,7 @@
 name = "frontend"
 version = "0.1.0"
 authors = ["JorianWoltjer <26067369+JorianWoltjer@users.noreply.github.com>"]
-edition = "2024"
+edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

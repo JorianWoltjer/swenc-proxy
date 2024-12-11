@@ -11,11 +11,17 @@
 
 ## Backend
 
-```
-cargo run
+```sh
+cargo run --release
 ```
 
 ## Frontend
+
+Requirements:
+
+* https://rustwasm.github.io/wasm-pack/installer/
+
+Building (inside `frontend/`):
 
 ```sh
 wasm-pack build --no-pack --target web
