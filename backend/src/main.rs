@@ -1,23 +1,25 @@
 use std::{collections::HashMap, fs::read_to_string, sync::Arc};
 
 use axum::{
-    Router,
     body::{Body, Bytes},
     extract::{Query, State},
     response::{Html, IntoResponse, Redirect},
     routing::{get, post},
+    Router,
 };
 use axum_extra::response::JavaScript;
-use base64::{Engine, prelude::BASE64_STANDARD};
+use base64::{prelude::BASE64_STANDARD, Engine};
 use futures_util::SinkExt;
 use http::{HeaderMap, HeaderName, StatusCode};
 use regex::Regex;
 use reqwest::Client;
 use serde::Deserialize;
-use shared::{EncryptionCodec, ProxyRequest, derive_key};
+use shared::{derive_key, EncryptionCodec, ProxyRequest};
 use tokio::net::TcpListener;
 use tokio_util::{codec::FramedWrite, io::ReaderStream};
 use tower_http::services::ServeDir;
+
+const BIND: &str = "0.0.0.0:8000";
 
 lazy_static::lazy_static! {
     static ref COOKIE_DOMAIN_RE: Regex = Regex::new(r"(?i)(;\s*domain=)[a-z0-9.-]+").unwrap();
@@ -176,9 +178,8 @@ async fn main() {
         keystore,
     };
 
-    let listen_address = "0.0.0.0:8000";
-    let listener = TcpListener::bind(listen_address).await.unwrap();
-    println!("Listening on http://{listen_address}");
+    let listener = TcpListener::bind(BIND).await.unwrap();
+    println!("Listening on http://{BIND}");
 
     let router = Router::new()
         .nest(

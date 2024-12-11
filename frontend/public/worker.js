@@ -84,14 +84,13 @@ async function fetchThroughProxy(request) {
 
   // Set filename for automatic content type detection and download filename
   const filename = new URL(data.url).pathname.split('/').at(-1);
-  let newOrigin = new URL(data.url).origin;
 
   return {
     response: await fetch(`/swenc-proxy/proxy/${encodeURIComponent(filename)}?` + new URLSearchParams({ key: globalThis.keyFingerprint }), {
       method: 'POST',
       body: serialize_proxy_request(data, globalThis.key),
     }),
-    newOrigin,
+    url: data.url,
   };
 }
 
@@ -113,28 +112,28 @@ async function fetchAndDecrypt(request) {
     return redirectToMain();
   }
 
-  if (request.mode == "navigate") {
-    if ((await self.clients.matchAll()).length === 0) {
-      // All tabs are closed, reset the origin and back to main page
-      globalThis.targetOrigin = null;
-      return redirectToMain();
-    }
+  if (request.mode === "navigate" && (await self.clients.matchAll()).length === 0) {
+    // All tabs are closed, reset the origin and back to main page
+    globalThis.targetOrigin = null;
+    return redirectToMain();
   }
 
-  const { response, newOrigin } = await fetchThroughProxy(request);
+  const { response, url } = await fetchThroughProxy(request);
+  let newOrigin = new URL(url).origin;
+  // For relative redirects, the `location` isn't updated yet
+  const baseURI = request.mode === "navigate" ? url : location.href;
 
   // Create a stream for decrypted content
   const decryptedStream = new ReadableStream({
     async start(controller) {
-      console.log(request);
-      if (request.mode == "navigate" &&
+      if (request.mode === "navigate" &&
         !response.headers.get("Content-Disposition")?.includes("attachment") &&
         response.headers.get("Content-Type")?.includes("text/html")) {
 
         globalThis.targetOrigin = newOrigin;
 
         // Inject prison.js to intercept navigations and set baseURI for relative URLs
-        controller.enqueue(new TextEncoder().encode(`
+        controller.enqueue(new TextEncoder().encode(`\
 <!DOCTYPE html>
 <script id="swenc-proxy-prison" src="${htmlEncode(location.origin)}/swenc-proxy/prison.js" data-swenc-proxy-origin="${htmlEncode(newOrigin)}"></script>
 `));
@@ -149,7 +148,7 @@ async function fetchAndDecrypt(request) {
     // Rewrite Location header because fetch() will follow it
     headers = new Headers({
       ...headers,
-      'Location': toFakeUrl(new URL(headers.get('X-Location'), location.href).href),
+      'Location': toFakeUrl(new URL(headers.get('X-Location'), baseURI).href),
     })
   }
   // Don't include body for status codes that shouldn't have one
