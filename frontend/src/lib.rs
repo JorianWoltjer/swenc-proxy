@@ -9,8 +9,8 @@ use utils::set_panic_hook;
 use wasm_bindgen::prelude::*;
 use wasm_streams::ReadableStream;
 use web_sys::{
-    ReadableStreamDefaultController,
     js_sys::{self, Uint8Array},
+    ReadableStreamDefaultController,
 };
 
 #[wasm_bindgen]
@@ -94,7 +94,7 @@ impl From<JsProxyRequest> for ProxyRequest {
 #[wasm_bindgen]
 pub fn serialize_proxy_request(object: JsProxyRequest, key: &[u8]) -> js_sys::Uint8Array {
     let request: ProxyRequest = object.into();
-    let serialized = bincode::serialize(&request).unwrap();
+    let serialized = rmp_serde::to_vec(&request).unwrap();
 
     let mut codec = EncryptionCodec::new(key.try_into().unwrap());
     let encrypted = codec.encode_once(&serialized);

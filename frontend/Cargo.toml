@@ -24,4 +24,4 @@ tokio-util = { version = "0.7.12", features = ["codec", "io"] }
 futures = "0.3.31"
 wasm-streams = "0.4.2"
 shared = { path = "../shared" }
-bincode = "1.3.3"
+rmp-serde = "1.3.0"

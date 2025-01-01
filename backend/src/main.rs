@@ -70,7 +70,7 @@ async fn proxy(
 
     let mut codec = EncryptionCodec::new(key);
     let decrypted = codec.decode_once(&body);
-    let request: ProxyRequest = bincode::deserialize(&decrypted).unwrap();
+    let request: ProxyRequest = rmp_serde::from_slice(&decrypted).unwrap();
 
     let url = force_https(&request.url);
     let mut headers = HeaderMap::new();
@@ -123,12 +123,13 @@ async fn proxy(
         match real_key.as_str() {
             // Skip these special response headers
             "transfer-encoding"
-            | "content-length"
             | "content-security-policy"
             | "content-security-policy-report-only"
             | "x-frame-options" => continue,
             // Modify `Location` header because fetch() follows redirects
             "location" => real_key = "x-location".parse().unwrap(),
+            // Modify `Content-Length` header to hint clients about the real length (axum uses chunked encoding)
+            "content-length" => real_key = "x-content-length".parse().unwrap(),
             // Modify cookies to be scoped to the proxy domain
             "set-cookie" => {
                 value = COOKIE_DOMAIN_RE

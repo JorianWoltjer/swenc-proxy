@@ -36,7 +36,7 @@ By default, it listens on `0.0.0.0:8000` but this can be changed with the [`BIND
 
 1. Enter a valid **encryption key** configured on the server.
 2. **Visit** a URL in the proxy, browse around
-3. When you want to **exit**, close all tabs to this application, then open it again (or go back to http://localhost/swenc-proxy/ manually)
+3. When you want to **exit**, close all tabs to this application, then open it again (or go back to http://localhost:8000/swenc-proxy/ manually)
 
 ## Technical Details
 
