@@ -34,9 +34,15 @@ By default, it listens on `0.0.0.0:8000` but this can be changed with the [`BIND
 
 ### Usage
 
+###### Browser
+
 1. Enter a valid **encryption key** configured on the server.
 2. **Visit** a URL in the proxy, browse around
 3. When you want to **exit**, close all tabs to this application, then open it again (or go back to http://localhost:8000/swenc-proxy/ manually)
+
+###### Command Line
+
+Using Python you can also download a single URL through a CLI tool. See [`cli/`](cli/) for details.
 
 ## Technical Details
 
@@ -64,7 +70,7 @@ As seen above, just adding a service worker to capture the `fetch` event won't c
 
 ## Known Issues
 
-##### Cloudflare challenges
+###### Cloudflare challenges
 
 Cloudflare challenges don't work because an iframe with origin `about:blank` makes an external request. Unforunately, [an open Chromium issue](https://issues.chromium.org/issues/41411856) says that Service Workers cannot capture such requests even though the parent is same-origin with the frame. The following is a proof-of-concept:
 
@@ -72,11 +78,11 @@ Cloudflare challenges don't work because an iframe with origin `about:blank` mak
 <iframe srcdoc="<script>fetch('https://example.com')</script>"></iframe>
 ```
 
-##### Multiple origins in different tabs
+###### Multiple origins in different tabs
 
 Due to only one Service Worker have a single `targetOrigin` it keeps track of, only one origin can be open at the same time when having multiple tabs of the proxy open. This issue is theoretically solvable and may be implemented in the future.
 
-##### Missing Firefox support
+###### Missing Firefox support
 
 Due to Firefox [not having implemented `import` syntax in service workers yet](https://bugzilla.mozilla.org/show_bug.cgi?id=1360870), this application can't load the service worker as it uses this syntax for importing the WebAssembly module ([here](frontend/public/worker.js#L1)).
 

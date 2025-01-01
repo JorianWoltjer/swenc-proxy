@@ -4,14 +4,12 @@ from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
 from urllib.parse import urlparse
 from getpass import getpass
 from hashlib import sha256
+from tqdm import tqdm
 import argparse
 import requests
 import msgpack
 import sys
 import os
-
-from tqdm import tqdm
-
 
 SALT = b"swenc-proxy-salt"
 
