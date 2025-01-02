@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = { version = "0.7.9", features = ["macros", "tokio"] }
+axum = { version = "0.8.1", features = ["macros", "tokio"] }
 axum-extra = "0.9.6"
 base64 = "0.22.1"
 futures-util = { version = "0.3.31", features = ["sink"] }
