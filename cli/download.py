@@ -15,6 +15,8 @@ SALT = b"swenc-proxy-salt"
 
 
 def log(*args, **kwargs):
+    if __name__ != "__main__":
+        return
     kwargs.setdefault("file", sys.stderr)
     prompt = kwargs.pop("prompt", "[+]")
     print(prompt, *args, **kwargs)
@@ -73,31 +75,31 @@ def decrypt(r_raw, key):
         yield decryptor.update(ciphertext) + decryptor.finalize()
 
 
-def serialize_proxy_request(url, key):
+def serialize_proxy_request(url, method="GET", headers=[("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")], body=b""):
     request = {
         "url": url,
-        "method": "GET",
-        "headers": [("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")],
+        "method": method,
+        "headers": headers,
     }
-    serialized = msgpack.packb(request)
-    encrypted = encrypt(serialized, key)
+    if body:
+        request["body"] = body
+    return msgpack.packb(request)
 
-    return encrypted
 
-
-def check_key(key):
+def check_key(server, key):
     key_fingerprint = get_fingerprint(key)
     log("Using Key:", key_fingerprint)
 
-    response = requests.get(args.server + "/swenc-proxy/check",
+    response = requests.get(server + "/swenc-proxy/check",
                             params={"key": key_fingerprint})
     return response.ok
 
 
 def fetch_through_proxy(server, url, key, max_redirects=5):
-    serialized = serialize_proxy_request(url, key)
+    serialized = serialize_proxy_request(url)
+    encrypted = encrypt(serialized, key)
     r = requests.post(server + "/swenc-proxy/proxy/",
-                      params={"key": get_fingerprint(key)}, data=serialized,
+                      params={"key": get_fingerprint(key)}, data=encrypted,
                       allow_redirects=False, stream=True)
     r.raise_for_status()
 
@@ -135,7 +137,7 @@ if __name__ == "__main__":
             args.key = getpass("[?] Encryption Key: ")
 
     args.key = derive_key(args.key)
-    if not check_key(args.key):
+    if not check_key(args.server, args.key):
         raise ValueError("Invalid Key")
     log("Key is valid")
 

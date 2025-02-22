@@ -128,6 +128,8 @@ async fn proxy(
             | "x-frame-options" => continue,
             // Modify `Location` header because fetch() follows redirects
             "location" => real_key = "x-location".parse().unwrap(),
+            // Modify `Content-Encoding` header to fix `requests` automatic decoding
+            "content-encoding" => real_key = "x-content-encoding".parse().unwrap(),
             // Modify `Content-Length` header to hint clients about the real length (axum uses chunked encoding)
             "content-length" => real_key = "x-content-length".parse().unwrap(),
             // Modify cookies to be scoped to the proxy domain
