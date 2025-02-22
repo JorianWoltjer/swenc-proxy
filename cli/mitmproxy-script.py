@@ -39,7 +39,6 @@ def request(flow: http.HTTPFlow) -> None:
 
     # mitmproxy cannot stream responses (https://github.com/mitmproxy/mitmproxy/discussions/5277), so for now we'll have to live with sending it in one go
     body = b"".join(decrypt(BytesIO(r.content), KEY))
-    logging.info(f"Received {body[:100]} and {r.headers}")
 
     for header in ["Location", "Content-Length", "Content-Encoding"]:
         if r.headers.get(f"X-{header}"):
