@@ -7,7 +7,7 @@ self.addEventListener("activate", (event) => {
 function isMetaRequest(url) {
   // Any requests to /swenc-proxy shouldn't be intercepted, except for /url for dummy requests
   return url.origin === location.origin && url.pathname.startsWith('/swenc-proxy') &&
-    url.pathname !== '/swenc-proxy/url';
+    !url.pathname.startsWith('/swenc-proxy/url');
 }
 
 self.addEventListener('fetch', async (event) => {
@@ -34,9 +34,9 @@ self.addEventListener('message', async (event) => {
       globalThis.key = derive_key(key);
       globalThis.keyFingerprint = await sha256(globalThis.key);
       break;
-    case 'setTargetOrigin':
-      globalThis.targetOrigin = event.data.origin;
-      console.log("Set target origin to", globalThis.targetOrigin);
+    case 'setBase':
+      globalThis.targetBase = event.data.targetBase;
+      console.log("Updated targetBase:", globalThis.targetBase);
       break;
     case 'isKeySet':
       event.source.postMessage({ type, isSet: !!globalThis.key });
@@ -45,26 +45,27 @@ self.addEventListener('message', async (event) => {
 });
 
 function getRealUrl(url) {
-  // Based on .href here to include relative directory
-  url = new URL(url, location.href);
-  if (url.origin === location.origin && url.pathname === '/swenc-proxy/url') {
+  url = new URL(url, globalThis.targetBase);
+  if (url.origin === location.origin && url.pathname.startsWith('/swenc-proxy/url')) {
     // It is a cross-origin navigation request with URL embedded
     return new URLSearchParams(url.search).get('url');
   } else if (url.origin === location.origin) {
     // It is a same-origin request, rewrite the origin
-    return new URL(url.pathname + url.search + url.hash, globalThis.targetOrigin || location.origin).href;
+    return new URL(url.pathname + url.search + url.hash, globalThis.targetBase).href;
   } else {
     // It is a background cross-origin request
     return url.href;
   }
 }
 function toFakeUrl(url) {
+  url = new URL(url, globalThis.targetBase);
   if (url.origin === location.origin) {
     // If same-origin, we can return relative URL
     return url.pathname + url.search + url.hash;
   } else {
     // Otherwise rewrite so we can intercept it
-    return new URL("/swenc-proxy/url?" + new URLSearchParams({ url }), location.origin).href;
+    const name = url.pathname.split('/').at(-1) || '';
+    return new URL(`/swenc-proxy/url/${name}?` + new URLSearchParams({ url }), location.origin).href;
   }
 }
 function forceHTTPS(url) {
@@ -86,9 +87,8 @@ async function fetchThroughProxy(request) {
   data.headers.push(['sec-fetch-mode', request.mode]);
   data.headers.push(['sec-fetch-site', "none"]);
   data.headers.push(['sec-fetch-user', "?1"]);
-  data.headers.push(['origin', targetOrigin || location.origin]);
-  // TODO: location.href is sw url, not address bar
-  data.headers.push(['referer', getRealUrl(location.href)]);
+  data.headers.push(['origin', new URL(globalThis.targetBase).origin]);
+  data.headers.push(['referer', globalThis.targetBase]);
 
   // Set filename for automatic content type detection and download filename
   const filename = new URL(data.url).pathname.split('/').at(-1);
@@ -122,14 +122,11 @@ async function fetchAndDecrypt(request) {
 
   if (request.mode === "navigate" && (await self.clients.matchAll()).length === 0) {
     // All tabs are closed, reset the origin and back to main page
-    globalThis.targetOrigin = null;
+    delete globalThis.targetBase;
     return redirectToMain();
   }
 
   const { response, url } = await fetchThroughProxy(request);
-  let newOrigin = new URL(url).origin;
-  // For relative redirects, the `location` isn't updated yet
-  const baseURI = request.mode === "navigate" ? url : getRealUrl(location.href);
 
   // Create a stream for decrypted content
   const decryptedStream = new ReadableStream({
@@ -138,13 +135,13 @@ async function fetchAndDecrypt(request) {
         !response.headers.get("Content-Disposition")?.includes("attachment") &&
         response.headers.get("Content-Type")?.includes("text/html")) {
 
-        globalThis.targetOrigin = newOrigin;
-        console.log("Set target origin to", globalThis.targetOrigin);
+        globalThis.targetBase = url;
+        console.log("Updated targetBase from navigation:", globalThis.targetBase);
 
         // Inject prison.js to intercept navigations and set baseURI for relative URLs
         controller.enqueue(new TextEncoder().encode(`\
 <!DOCTYPE html>
-<script id="swenc-proxy-prison" src="${htmlEncode(location.origin)}/swenc-proxy/prison.js" data-target-origin="${htmlEncode(newOrigin)}"></script>
+<script id="swenc-proxy-prison" src="${htmlEncode(location.origin)}/swenc-proxy/prison.js" data-target-base="${htmlEncode(url)}"></script>
 `));
       }
 
@@ -157,14 +154,14 @@ async function fetchAndDecrypt(request) {
     // Rewrite Location header because fetch() will follow it
     headers = new Headers({
       ...headers,
-      'Location': toFakeUrl(new URL(headers.get('X-Location'), baseURI).href),
+      'Location': toFakeUrl(headers.get('X-Location')),
     })
   }
   // Don't include body for status codes that shouldn't have one
   const stream = [101, 204, 205, 304].includes(response.status) ? null : decryptedStream;
   // Return a new Response with the decrypted stream
   return new Response(stream, {
-    status: response.status,
+    status: Math.min(response.status, 599), // Limit status code to 599
     statusText: response.statusText,
     headers,
   });

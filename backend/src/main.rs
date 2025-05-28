@@ -111,9 +111,6 @@ async fn proxy(
     }
 
     println!("Proxying: {}", url);
-    dbg!(&method);
-    dbg!(&url);
-    dbg!(&headers);
     let mut response = state
         .client
         .request(method, &url)
@@ -125,7 +122,6 @@ async fn proxy(
 
     let response_headers = response.headers().clone();
     let status_code = response.status();
-    dbg!(&status_code);
 
     let mut headers = HeaderMap::new();
     let mut last_key = None;
