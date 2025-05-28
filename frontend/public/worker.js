@@ -36,6 +36,7 @@ self.addEventListener('message', async (event) => {
       break;
     case 'setTargetOrigin':
       globalThis.targetOrigin = event.data.origin;
+      console.log("Set target origin to", globalThis.targetOrigin);
       break;
     case 'isKeySet':
       event.source.postMessage({ type, isSet: !!globalThis.key });
@@ -78,9 +79,16 @@ async function fetchThroughProxy(request) {
     headers: Array.from(request.headers.entries()),
   }
   if (request.body) {
-    //data.body = new Uint8Array(await request.arrayBuffer());
-    data.body = await request.arrayBuffer();
+    data.body = new Uint8Array(await request.arrayBuffer());
   }
+  // Some headers aren't seen in 'fetch' yet, so set them manually
+  data.headers.push(['sec-fetch-dest', request.destination]);
+  data.headers.push(['sec-fetch-mode', request.mode]);
+  data.headers.push(['sec-fetch-site', "none"]);
+  data.headers.push(['sec-fetch-user', "?1"]);
+  data.headers.push(['origin', targetOrigin || location.origin]);
+  // TODO: location.href is sw url, not address bar
+  data.headers.push(['referer', getRealUrl(location.href)]);
 
   // Set filename for automatic content type detection and download filename
   const filename = new URL(data.url).pathname.split('/').at(-1);
@@ -121,7 +129,7 @@ async function fetchAndDecrypt(request) {
   const { response, url } = await fetchThroughProxy(request);
   let newOrigin = new URL(url).origin;
   // For relative redirects, the `location` isn't updated yet
-  const baseURI = request.mode === "navigate" ? url : location.href;
+  const baseURI = request.mode === "navigate" ? url : getRealUrl(location.href);
 
   // Create a stream for decrypted content
   const decryptedStream = new ReadableStream({
@@ -131,11 +139,12 @@ async function fetchAndDecrypt(request) {
         response.headers.get("Content-Type")?.includes("text/html")) {
 
         globalThis.targetOrigin = newOrigin;
+        console.log("Set target origin to", globalThis.targetOrigin);
 
         // Inject prison.js to intercept navigations and set baseURI for relative URLs
         controller.enqueue(new TextEncoder().encode(`\
 <!DOCTYPE html>
-<script id="swenc-proxy-prison" src="${htmlEncode(location.origin)}/swenc-proxy/prison.js" data-swenc-proxy-origin="${htmlEncode(newOrigin)}"></script>
+<script id="swenc-proxy-prison" src="${htmlEncode(location.origin)}/swenc-proxy/prison.js" data-target-origin="${htmlEncode(newOrigin)}"></script>
 `));
       }
 

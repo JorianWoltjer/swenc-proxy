@@ -1,11 +1,8 @@
-mod utils;
-
 use std::io;
 
 use futures::StreamExt;
 use shared::{EncryptionCodec, ProxyRequest};
 use tokio_util::{bytes::Bytes, codec::FramedRead, io::StreamReader};
-use utils::set_panic_hook;
 use wasm_bindgen::prelude::*;
 use wasm_streams::ReadableStream;
 use web_sys::{
@@ -57,12 +54,15 @@ pub async fn decrypt_stream(
     while let Some(chunk) = reader.next().await {
         let chunk = chunk.unwrap();
         unsafe {
-            writer
+            if writer
                 .enqueue_with_chunk(&Uint8Array::new(&Uint8Array::view(&chunk)))
-                .unwrap();
+                .is_err()
+            {
+                break;
+            }
         }
     }
-    writer.close().unwrap();
+    let _ = writer.close();
 }
 
 impl From<JsProxyRequest> for ProxyRequest {
@@ -93,6 +93,7 @@ impl From<JsProxyRequest> for ProxyRequest {
 
 #[wasm_bindgen]
 pub fn serialize_proxy_request(object: JsProxyRequest, key: &[u8]) -> js_sys::Uint8Array {
+    console_error_panic_hook::set_once();
     let request: ProxyRequest = object.into();
     let serialized = rmp_serde::to_vec(&request).unwrap();
 
