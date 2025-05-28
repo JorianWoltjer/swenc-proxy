@@ -205,7 +205,7 @@ async fn main() {
             "/swenc-proxy",
             Router::new()
                 .route("/proxy/", post(proxy))
-                .route("/proxy/:filename", post(proxy))
+                .route("/proxy/{filename}", post(proxy))
                 .route("/check", get(check_key))
                 .nest_service("/pkg", ServeDir::new("../frontend/pkg"))
                 .fallback_service(ServeDir::new("../frontend/public")),

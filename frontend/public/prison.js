@@ -5,14 +5,21 @@
   const swencOrigin = location.origin === 'null' ? info?.dataset.swencOrigin : location.origin;
 
   // Keep targetBase in history state
-  if (history.state?.targetBase && history.state.targetBase !== targetBase) {
-    navigator.serviceWorker.controller.postMessage({
-      type: "setBase",
-      targetBase: history.state.targetBase
-    });
-    location.reload();
-    throw new Error("Reloading with recovered targetBase:", history.state.targetBase);
+  function handleHistory(force = false) {
+    if (history.state?.targetBase && (history.state.targetBase !== targetBase || force)) {
+      navigator.serviceWorker.controller.postMessage({
+        type: "setBase",
+        targetBase: history.state.targetBase
+      });
+      location.reload();
+      throw new Error("Reloading with recovered targetBase:", history.state.targetBase);
+    }
   }
+  handleHistory();
+  window.addEventListener('pageshow', (event) => {
+    // bfcache
+    if (event.persisted) handleHistory(true);
+  });
   if (location.href !== 'about:blank') history.replaceState({ targetBase }, "", getVisualUrl(location.href));
 
   // Prevent proxied site from accessing my service worker (GitHub and Netflix would unregister it)
