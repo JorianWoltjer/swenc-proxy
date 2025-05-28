@@ -8,7 +8,6 @@ use axum::{
     Router,
 };
 use axum_extra::response::JavaScript;
-use base64::{prelude::BASE64_STANDARD, Engine};
 use futures_util::SinkExt;
 use http::{HeaderMap, HeaderName, StatusCode};
 use regex::Regex;
@@ -80,10 +79,19 @@ async fn proxy(
             value.parse().unwrap(),
         );
     }
+
     // Cookies can't be passed by JavaScript, so get it from the automatic Cookie header
     if let Some(cookie) = axum_headers.get("cookie") {
         headers.insert("cookie", cookie.clone());
     }
+    headers.insert(
+        "accept-language",
+        axum_headers.get("accept-language").unwrap().clone(),
+    );
+    headers.insert(
+        "accept-encoding",
+        axum_headers.get("accept-encoding").unwrap().clone(),
+    );
     // Domain used later on to rescope cookies
     let axum_domain = axum_headers
         .get("host")
@@ -94,9 +102,13 @@ async fn proxy(
         .next()
         .unwrap();
     let method = reqwest::Method::from_bytes(request.method.as_bytes()).unwrap();
-    let body = request
-        .body
-        .map(|body| BASE64_STANDARD.decode(body).unwrap());
+    let body = request.body;
+    if body
+        .as_ref()
+        .map_or_else(|| method == reqwest::Method::POST, |b| b.is_empty())
+    {
+        headers.insert("content-length", "0".parse().unwrap());
+    }
 
     println!("Proxying: {}", url);
     let mut response = state

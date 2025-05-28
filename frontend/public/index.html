@@ -11,10 +11,20 @@
       <p><a href="https://github.com/JorianWoltjer/swenc-proxy" target="_blank">Service Worker Encrypted Proxy</a></p>
       <form id="form">
         <div class="input-group">
-          <input id="key-input" class="valid-color" name="key" type="password" autocomplete="encryption-key" placeholder="[ENCRYPTION KEY]" style="text-align: center" required autofocus />
+          <input
+            id="key-input"
+            class="valid-color"
+            name="key"
+            type="password"
+            autocomplete="encryption-key"
+            placeholder="[ENCRYPTION KEY]"
+            style="text-align: center"
+            required
+            autofocus
+          />
         </div>
         <div class="input-group" id="url-input-group">
-          <input name="url" type="text" value="https://www.google.com" disabled />
+          <input name="url" type="text" value="https://duckduckgo.com" disabled />
           <button type="submit" disabled>
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
               <!--!Font Awesome Free 6.7.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2024 Fonticons, Inc.-->
@@ -129,22 +139,31 @@
 
       form.addEventListener("submit", (event) => {
         event.preventDefault();
-        let url = event.target.url.value;
-        // Try parsing URL, add protocol if missing
+        let input = event.target.url.value;
+        // Try parsing URL, add protocol if missing, otherwise search
+        let url;
         try {
-          url = new URL(url);
+          url = new URL(input);
         } catch (error) {
           try {
-            url = new URL("https://" + url);
+            url = new URL("https://" + input);
+            if (!url.hostname.includes(".")) {
+              throw new Error("Hostname has no dots");
+            }
           } catch (error) {
-            urlInputGroup.querySelector("input").setCustomValidity("Invalid URL");
-            console.error(error);
-            return;
+            console.error("Invalid URL:", error);
+            url = new URL("https://duckduckgo.com/?" + new URLSearchParams({ q: input }));
           }
         }
 
-        // No need to set targetOrigin yet, because absolute URL here
-        location.href = new URL("/swenc-proxy/url?" + new URLSearchParams({ url }), location.origin).href;
+        // Set base and start proxy by navigation
+        navigator.serviceWorker.controller.postMessage({
+          type: "setBase",
+          targetBase: url.href,
+        });
+
+        const name = url.pathname.split("/").at(-1) || "";
+        location.href = `/swenc-proxy/url/${name}?` + new URLSearchParams({ url });
       });
     </script>
   </body>
