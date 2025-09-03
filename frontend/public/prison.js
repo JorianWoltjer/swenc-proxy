@@ -23,7 +23,7 @@
   if (location.href !== 'about:blank') history.replaceState({ targetBase }, "", getVisualUrl(location.href));
 
   // Prevent proxied site from accessing my service worker (GitHub and Netflix would unregister it)
-  const thisWorker = new URL("/worker.js", swencOrigin).href;
+  const thisWorker = new URL("/swenc-proxy/sw.js", swencOrigin).href;
   navigator.serviceWorker.getRegistrations = new Proxy(navigator.serviceWorker.getRegistrations, {
     apply(target, thisArg, args) {
       return target.apply(thisArg, args).then((registrations) => {
@@ -46,7 +46,7 @@
 
   function getVisualUrl(url) {
     url = new URL(url, location.href);
-    if (url.origin === swencOrigin && url.pathname.startsWith('/swenc-proxy/url')) {
+    if (url.origin === swencOrigin && url.pathname === '/swenc-proxy/url') {
       // Has embedded URL
       return getVisualUrl(new URLSearchParams(url.search).get('url'));
     } else {
@@ -61,8 +61,7 @@
       return originalUrl;
     } else {
       // Otherwise rewrite so we can intercept it
-      const name = url.pathname.split('/').at(-1) || '';
-      return new URL(`/swenc-proxy/url/${name}?` + new URLSearchParams({ url }), swencOrigin).href;
+      return new URL(`/swenc-proxy/url?` + new URLSearchParams({ url }), swencOrigin).href;
     }
   }
 

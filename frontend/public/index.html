@@ -43,7 +43,7 @@
       if ("serviceWorker" in navigator) {
         if (!navigator.serviceWorker.controller) {
           navigator.serviceWorker
-            .register("/swenc-proxy-sw.js", { type: "module" })
+            .register("/swenc-proxy/sw.js", { type: "module", scope: "/" })
             .then((registration) => {
               console.log("ServiceWorker registered", registration);
             })
@@ -162,8 +162,7 @@
           targetBase: url.href,
         });
 
-        const name = url.pathname.split("/").at(-1) || "";
-        location.href = `/swenc-proxy/url/${name}?` + new URLSearchParams({ url });
+        location.href = `/swenc-proxy/url?` + new URLSearchParams({ url });
       });
     </script>
   </body>

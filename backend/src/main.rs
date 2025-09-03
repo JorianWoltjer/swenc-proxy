@@ -7,7 +7,6 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use axum_extra::response::JavaScript;
 use futures_util::SinkExt;
 use http::{HeaderMap, HeaderName, StatusCode};
 use regex::Regex;
@@ -124,26 +123,21 @@ async fn proxy(
     let status_code = response.status();
 
     let mut headers = HeaderMap::new();
-    let mut last_key = None;
-    for (key, mut value) in response_headers {
-        let mut real_key = if key.is_none() {
-            last_key.clone().unwrap()
-        } else {
-            last_key = key.clone();
-            key.unwrap()
-        };
-        match real_key.as_str() {
+    for (key, value) in &response_headers {
+        let mut key = key.clone();
+        let mut value = value.clone();
+        match key.as_str() {
             // Skip these special response headers
             "transfer-encoding"
             | "content-security-policy"
             | "content-security-policy-report-only"
             | "x-frame-options" => continue,
             // Modify `Location` header because fetch() follows redirects
-            "location" => real_key = "x-location".parse().unwrap(),
+            "location" => key = "x-location".parse().unwrap(),
             // Modify `Content-Encoding` header to fix `requests` automatic decoding
-            "content-encoding" => real_key = "x-content-encoding".parse().unwrap(),
+            "content-encoding" => key = "x-content-encoding".parse().unwrap(),
             // Modify `Content-Length` header to hint clients about the real length (axum uses chunked encoding)
-            "content-length" => real_key = "x-content-length".parse().unwrap(),
+            "content-length" => key = "x-content-length".parse().unwrap(),
             // Modify cookies to be scoped to the proxy domain
             "set-cookie" => {
                 value = COOKIE_DOMAIN_RE
@@ -151,9 +145,32 @@ async fn proxy(
                     .parse()
                     .unwrap();
             }
+            "content-disposition" => {} // Handled later
             _ => {}
         }
-        headers.append(real_key, value);
+        headers.append(key, value);
+    }
+    match response_headers.get("content-disposition") {
+        Some(val) if val.to_str().unwrap().to_lowercase().contains("filename") => {
+            // If already set, preserve it
+            headers.insert("content-disposition", val.clone());
+        }
+        _ => {
+            // Otherwise inline with URL filename
+            let filename = url
+                .split('/')
+                .last()
+                .and_then(|s| s.split('?').next())
+                .unwrap_or_default();
+            if !filename.is_empty() {
+                headers.insert(
+                    "content-disposition",
+                    format!("inline; filename*=UTF-8''{}", filename) // URL-encoding not needed because it comes from the URL
+                        .parse()
+                        .unwrap(),
+                );
+            }
+        }
     }
 
     // Stream response body while decrypting
@@ -205,18 +222,25 @@ async fn main() {
             "/swenc-proxy",
             Router::new()
                 .route("/proxy/", post(proxy))
-                .route("/proxy/{filename}", post(proxy))
                 .route("/check", get(check_key))
+                .route(
+                    "/sw.js",
+                    get(|| async {
+                        (
+                            [
+                                ("Content-Type", "application/javascript"),
+                                ("Service-Worker-Allowed", "/"), // Scoped to root
+                            ],
+                            include_str!("../../frontend/public/sw.js"),
+                        )
+                    }),
+                )
                 .nest_service("/pkg", ServeDir::new("../frontend/pkg"))
                 .fallback_service(ServeDir::new("../frontend/public")),
         )
         .route(
             "/swenc-proxy/", // To handle no path
             get(|| async { Html(include_str!("../../frontend/public/index.html")) }),
-        )
-        .route(
-            "/swenc-proxy-sw.js", // Needs to be in the root directory
-            get(|| async { JavaScript(include_str!("../../frontend/public/worker.js")) }),
         )
         .route(
             "/favicon.ico",

@@ -84,10 +84,10 @@ Due to only one Service Worker have a single `targetOrigin` it keeps track of, o
 
 ###### Missing Firefox support
 
-Due to Firefox [not having implemented `import` syntax in service workers yet](https://bugzilla.mozilla.org/show_bug.cgi?id=1360870), this application can't load the service worker as it uses this syntax for importing the WebAssembly module ([here](frontend/public/worker.js#L1)).
+Due to Firefox [not having implemented `import` syntax in service workers yet](https://bugzilla.mozilla.org/show_bug.cgi?id=1360870), this application can't load the service worker as it uses this syntax for importing the WebAssembly module ([here](frontend/public/sw.js#L1)).
 
 ```js
-// worker.js
+// sw.js
 import { decrypt_stream, derive_key, serialize_proxy_request, sha256 } from '/swenc-proxy/utils.js';
 ...
 ```

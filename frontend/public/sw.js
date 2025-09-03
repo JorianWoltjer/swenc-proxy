@@ -7,7 +7,7 @@ self.addEventListener("activate", (event) => {
 function isMetaRequest(url) {
   // Any requests to /swenc-proxy shouldn't be intercepted, except for /url for dummy requests
   return url.origin === location.origin && url.pathname.startsWith('/swenc-proxy') &&
-    !url.pathname.startsWith('/swenc-proxy/url');
+    url.pathname !== '/swenc-proxy/url';
 }
 
 self.addEventListener('fetch', async (event) => {
@@ -46,7 +46,7 @@ self.addEventListener('message', async (event) => {
 
 function getRealUrl(url) {
   url = new URL(url, globalThis.targetBase);
-  if (url.origin === location.origin && url.pathname.startsWith('/swenc-proxy/url')) {
+  if (url.origin === location.origin && url.pathname === '/swenc-proxy/url') {
     // It is a cross-origin navigation request with URL embedded
     return new URLSearchParams(url.search).get('url');
   } else if (url.origin === location.origin) {
@@ -64,8 +64,7 @@ function toFakeUrl(url) {
     return url.pathname + url.search + url.hash;
   } else {
     // Otherwise rewrite so we can intercept it
-    const name = url.pathname.split('/').at(-1) || '';
-    return new URL(`/swenc-proxy/url/${name}?` + new URLSearchParams({ url }), location.origin).href;
+    return new URL(`/swenc-proxy/url?` + new URLSearchParams({ url }), location.origin).href;
   }
 }
 function forceHTTPS(url) {
@@ -90,11 +89,8 @@ async function fetchThroughProxy(request) {
   data.headers.push(['origin', new URL(globalThis.targetBase).origin]);
   data.headers.push(['referer', globalThis.targetBase]);
 
-  // Set filename for automatic content type detection and download filename
-  const filename = new URL(data.url).pathname.split('/').at(-1);
-
   return {
-    response: await fetch(`/swenc-proxy/proxy/${encodeURIComponent(filename)}?` + new URLSearchParams({ key: globalThis.keyFingerprint }), {
+    response: await fetch(`/swenc-proxy/proxy/?` + new URLSearchParams({ key: globalThis.keyFingerprint }), {
       method: 'POST',
       body: serialize_proxy_request(data, globalThis.key),
     }),
