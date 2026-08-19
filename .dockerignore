@@ -1,0 +1,10 @@
+.git
+.github
+target
+**/target
+**/pkg
+cli
+*.md
+.gitignore
+docker-compose.yml
+Dockerfile
